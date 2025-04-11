@@ -30,7 +30,6 @@ impl SLOSpec {
     }
 
     pub fn validate(&self, sli_map: &HashMap<String, SLISpec>, path: &str) -> ValidationResult {
-        println!("Validating SLOSpec: {:?}", self);
         if self.is_composite() && (self.indicator.is_some() || self.indicator_ref.is_some()) {
             return Err(ValidationError::new(
                 format!("{path}.indicator"),
@@ -207,49 +206,31 @@ impl Objective {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum TimeWindow {
-    Rolling(RollingTimeWindow),
-    CalendarAligned(CalendarAlignedTimeWindow),
+pub struct TimeWindow {
+    pub duration: DurationShorthand,
+    pub calendar: Option<CalendarDetails>,
+    #[serde(rename = "isRolling")]
+    pub is_rolling: bool,
 }
 
 impl TimeWindow {
     pub fn validate(&self, path: &str) -> ValidationResult {
-        match self {
-            TimeWindow::Rolling(rolling) => {
-                if !rolling.is_rolling {
-                    return Err(ValidationError::new(
-                        format!("{path}.isRolling"),
-                        "Rolling time window must have isRolling set to true.",
-                    ));
-                }
-            }
-            TimeWindow::CalendarAligned(calendar) => {
-                if calendar.is_rolling {
-                    return Err(ValidationError::new(
-                        format!("{path}.isRolling"),
-                        "Calendar-aligned time window must have isRolling set to false.",
-                    ));
-                }
-            }
+        if self.is_rolling && self.calendar.is_some() {
+            return Err(ValidationError::new(
+                format!("{path}.calendar"),
+                "Calendar details can only be specified for Calendar Aligned time windows.",
+            ));
         }
+
+        if !self.is_rolling && self.calendar.is_none() {
+            return Err(ValidationError::new(
+                format!("{path}.calendar"),
+                "Calendar details must be specified for Calendar Aligned time windows.",
+            ));
+        }
+
         Ok(())
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CalendarAlignedTimeWindow {
-    pub duration: DurationShorthand,
-    pub calendar: CalendarDetails,
-    #[serde(default, rename = "isRolling")]
-    pub is_rolling: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RollingTimeWindow {
-    pub duration: DurationShorthand,
-    #[serde(default = "default_is_rolling", rename = "isRolling")]
-    pub is_rolling: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -260,6 +241,193 @@ pub struct CalendarDetails {
     pub time_zone: String,
 }
 
-fn default_is_rolling() -> bool {
-    true
+#[cfg(test)]
+mod time_window_tests {
+    use super::*;
+    use serde_yaml;
+
+    #[test]
+    fn test_time_window_rolling_valid() {
+        let yaml = r#"
+        duration: 1h
+        isRolling: true
+        "#;
+
+        let time_window: TimeWindow = serde_yaml::from_str(yaml).unwrap();
+        let result = time_window.validate("timeWindow");
+        assert!(
+            result.is_ok(),
+            "Expected valid TimeWindow to pass validation"
+        );
+    }
+
+    #[test]
+    fn test_time_window_rolling_invalid() {
+        let yaml = r#"
+        duration: 1h
+        isRolling: false
+        "#;
+
+        let time_window: TimeWindow = serde_yaml::from_str(yaml).unwrap();
+        let result = time_window.validate("timeWindow");
+        assert!(
+            result.is_err(),
+            "Expected invalid TimeWindow to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_calendar_alligned_valid() {
+        let yaml = r#"
+        duration: 1h
+        isRolling: false
+        calendar:
+          startTime: "2023-01-01T00:00:00Z"
+          timeZone: "UTC"
+        "#;
+
+        let time_window: TimeWindow = serde_yaml::from_str(yaml).unwrap();
+        let result = time_window.validate("timeWindow");
+        assert!(
+            result.is_ok(),
+            "Expected valid TimeWindow to pass validation"
+        );
+    }
+
+    #[test]
+    fn test_calendar_alligned_invalid() {
+        let yaml = r#"
+        duration: 1h
+        isRolling: true
+        calendar:
+          startTime: "2023-01-01T00:00:00Z"
+          timeZone: "UTC"
+        "#;
+
+        let time_window: TimeWindow = serde_yaml::from_str(yaml).unwrap();
+        let result = time_window.validate("timeWindow");
+        assert!(
+            result.is_err(),
+            "Expected invalid TimeWindow to fail validation"
+        );
+    }
+}
+
+#[cfg(test)]
+mod objective_test {
+    use crate::parser::sli::{MetricSource, ThresholdMetric};
+
+    use super::*;
+    use serde_yaml;
+
+    // Valid Test Cases
+    #[test]
+    fn test_valid_objective_with_target_and_ref() {
+        let yaml = r#"
+        target: 0.99
+        indicatorRef: latency_indicator
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+        let mut sli_map = HashMap::new();
+
+        sli_map.insert(
+            "latency_indicator".to_string(),
+            SLISpec {
+                threshold_metric: Some(ThresholdMetric {
+                    metric_source: MetricSource {
+                        metric_source_ref: Some("datadoge".to_string()),
+                        type_: Some("datadoge".to_string()),
+                        spec: None,
+                    },
+                }),
+                description: None,
+                ratio_metric: None,
+                // Add other fields as necessary
+            },
+        );
+
+        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_ok(),
+            "Expected valid target objective to pass validation"
+        );
+    }
+
+    #[test]
+    fn test_valid_objective_with_target_percent_inline_sli() {
+        let yaml = r#"
+        targetPercent: 99.9
+        indicator:
+          thresholdMetric:
+            metric_source:
+              metric_source_ref: "datadoge"
+              type_: "datadoge"
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+        let sli_map = HashMap::new();
+        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_ok(),
+            "Expected valid target objective to pass validation"
+        );
+    }
+
+    #[test]
+    fn test_valid_threshold_objective() {
+        let yaml = r#"
+        op: lte
+        value: 500
+        target: 0.95
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+        let sli_map = HashMap::new();
+        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_ok(),
+            "Expected valid target objective to pass validation"
+        );
+    }
+
+    #[test]
+    fn test_valid_timeslice_objective() {
+        let yaml = r#"
+        targetPercent: 99.9
+        timeSliceTarget: 0.9
+        timeSliceWindow: 5m
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+        let sli_map = HashMap::new();
+        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_ok(),
+            "Expected valid target objective to pass validation"
+        );
+    }
+
+    #[test]
+    fn test_all_fields_set() {
+        let yaml = r#"
+        displayName: "Latency Objective"
+        op: gte
+        value: 200
+        targetPercent: 99.5
+        compositeWeight: 2
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_ok(),
+            "Expected valid target objective to pass validation"
+        );
+    }
+
+    // Invalid Test Cases
 }
