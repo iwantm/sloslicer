@@ -11,6 +11,8 @@ pub enum Operator {
     Lt,
     #[serde(rename = "gt")]
     Gt,
+    #[serde(other)]
+    Invalid,
 }
 
 #[derive(Debug)]

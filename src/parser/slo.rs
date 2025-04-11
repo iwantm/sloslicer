@@ -161,6 +161,15 @@ impl Objective {
         sli_map: &HashMap<String, SLISpec>,
         path: &str,
     ) -> ValidationResult {
+        if let Some(op) = &self.op {
+            if matches!(op, Operator::Invalid) {
+                return Err(ValidationError::new(
+                    format!("{path}.op"),
+                    "Invalid operator specified.",
+                ));
+            }
+        }
+
         if self.target.is_some() && self.target_percent.is_some() {
             return Err(ValidationError::new(
                 format!("{path}.target"),
@@ -171,6 +180,51 @@ impl Objective {
             return Err(ValidationError::new(
                 format!("{path}.target"),
                 "Must specify either target or targetPercent.",
+            ));
+        }
+
+        if self.target.is_some() && (self.target.unwrap() < 0.0 || self.target.unwrap() > 1.0) {
+            return Err(ValidationError::new(
+                format!("{path}.target"),
+                "Target must be between 0 and 1.",
+            ));
+        }
+
+        if self.target_percent.is_some()
+            && (self.target_percent.unwrap() < 0.0 || self.target_percent.unwrap() > 100.0)
+        {
+            return Err(ValidationError::new(
+                format!("{path}.targetPercent"),
+                "Target percent must be between 0 and 100.",
+            ));
+        }
+
+        if self.time_slice_target.is_some()
+            && (self.time_slice_target.unwrap() < 0.0 || self.time_slice_target.unwrap() > 1.0)
+        {
+            return Err(ValidationError::new(
+                format!("{path}.timeSliceTarget"),
+                "TimeSlice target must be between 0 and 1.",
+            ));
+        }
+
+        if self.op.is_some() && self.value.is_none() {
+            return Err(ValidationError::new(
+                format!("{path}.value"),
+                "Value must be specified when using an operator.",
+            ));
+        }
+        if self.value.is_some() && self.op.is_none() {
+            return Err(ValidationError::new(
+                format!("{path}.op"),
+                "Operator must be specified when using a value.",
+            ));
+        }
+
+        if self.composite_weight < 0.0 {
+            return Err(ValidationError::new(
+                format!("{path}.compositeWeight"),
+                "Composite weight must be greater than or equal to 0.",
             ));
         }
 
@@ -430,4 +484,209 @@ mod objective_test {
     }
 
     // Invalid Test Cases
+
+    #[test]
+    fn test_invalid_target_and_target_percentage() {
+        let yaml = r#"
+        target: 0.99
+        targetPercent: 99.9
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_err(),
+            "Expected invalid target objective to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_invalid_no_target_or_percentage() {
+        let yaml = r#"
+        displayName: "Missing Target"
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_err(),
+            "Expected invalid target objective to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_invalid_target_range() {
+        let yaml = r#"
+        target: 1.2
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_err(),
+            "Expected invalid target objective to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_invalid_target_percentage_range() {
+        let yaml = r#"
+        targetPercent: 100.5
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_err(),
+            "Expected invalid target objective to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_invalid_time_slice_target() {
+        let yaml = r#"
+        targetPercent: 99.9
+        timeSliceTarget: 1.5
+        timeSliceWindow: 10m
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_err(),
+            "Expected invalid target objective to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_invalid_missing_value_with_op() {
+        let yaml = r#"
+        op: lt
+        target: 0.9
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_err(),
+            "Expected invalid target objective to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_invalid_composite_weight() {
+        let yaml = r#"
+        target: 0.99
+        compositeWeight: -1
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
+        assert!(
+            result.is_err(),
+            "Expected invalid target objective to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_invalid_missing_timeslice_window_with_target() {
+        let yaml = r#"
+        target: 0.99
+        timeSliceTarget: 0.9
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Timeslices, &sli_map, "objective");
+        assert!(
+            result.is_err(),
+            "Expected invalid target objective to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_invalid_missing_target_with_timeslice_window() {
+        let yaml = r#"
+        target: 0.99
+        timeSliceWindow: 1h
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Timeslices, &sli_map, "objective");
+        assert!(
+            result.is_err(),
+            "Expected invalid target objective to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_invalid_enum_for_op() {
+        let yaml = r#"
+        op: equals
+        value: 500
+        target: 0.95
+        "#;
+
+        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
+
+        let sli_map = HashMap::new();
+
+        let result: Result<(), ValidationError> =
+            objective.validate(&BudgetingMethod::Timeslices, &sli_map, "objective");
+        assert!(
+            result.is_err(),
+            "Expected invalid target objective to fail validation"
+        );
+    }
+
+    #[test]
+    fn test_invalid_duration() {
+        let yaml = r#"
+        targetPercent: 99.5
+        timeSliceTarget: 0.9
+        timeSliceWindow: "5x"
+        "#;
+
+        let objective: Result<Objective, _> = serde_yaml::from_str(yaml);
+
+        assert!(
+            objective.is_err(),
+            "Expected deserialization to fail for invalid duration format"
+        );
+    }
 }
