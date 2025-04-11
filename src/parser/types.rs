@@ -94,8 +94,45 @@ pub struct SLOSpec {
 
 impl SLOSpec {
     pub fn validate(&self, sli_map: &HashMap<String, SLISpec>) -> Result<(), String> {
-        if self.indicatior.is_some() && self.indicator_ref.is_some() {
-            return Err("Cannot specify both indicator and indicatorRef".to_string());
+        // Check for composite SLO
+        let is_composite_slo = self
+            .objectives
+            .iter()
+            .any(|objective| objective.indicatior.is_some() || objective.indicator_ref.is_some());
+
+        if is_composite_slo {
+            if self.indicatior.is_some() || self.indicator_ref.is_some() {
+                return Err(
+                    "indicator or indicatorRef must be moved into objectives for composite SLOs"
+                        .to_string(),
+                );
+            }
+        }
+
+        if !is_composite_slo {
+            if self.indicatior.is_some() && self.indicator_ref.is_some() {
+                return Err("Cannot specify both indicator and indicatorRef".to_string());
+            }
+
+            if self.indicatior.is_none() && self.indicator_ref.is_none() {
+                return Err(
+                    "Must specify either `indicator` or `indicatorRef` in SLOSpec.".to_string(),
+                );
+            }
+
+            if let Some(indicator) = &self.indicatior {
+                indicator.validate()?;
+            }
+
+            if let Some(indicator_ref) = &self.indicator_ref {
+                let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
+                    format!(
+                        "Indicator reference `{}` does not exist in the provided SLI map.",
+                        indicator_ref
+                    )
+                })?;
+                indicator.validate()?;
+            }
         }
 
         if let Some(time_window) = &self.time_window {
@@ -112,21 +149,28 @@ impl SLOSpec {
         if let Some(indicator) = &self.indicatior {
             if indicator.threshold_metric.is_some() && self.objectives.len() != 1 {
                 return Err(
-                    "Only one objective is allowed when using a thresholdMetric.".to_string(),
+                    "Only one objective is allowed when using a `thresholdMetric`.".to_string(),
                 );
             }
-
-            indicator.validate()?;
         }
 
         if let Some(indicator_ref) = &self.indicator_ref {
-            let sli = sli_map.get(indicator_ref).ok_or_else(|| {
+            let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
                 format!(
-                    "Indicator {} not found in the provided SLI map.",
+                    "Indicator reference `{}` does not exist in the provided SLI map.",
                     indicator_ref
                 )
             })?;
-            sli.validate()?;
+
+            if indicator.threshold_metric.is_some() && self.objectives.len() != 1 {
+                return Err(
+                    "Only one objective is allowed when using a `thresholdMetric`.".to_string(),
+                );
+            }
+        }
+
+        for objective in &self.objectives {
+            objective.validate(sli_map)?;
         }
 
         Ok(())
@@ -213,12 +257,26 @@ pub struct Objective {
 }
 
 impl Objective {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self, sli_map: &HashMap<String, SLISpec>) -> Result<(), String> {
         if self.target.is_some() && self.target_percent.is_some() {
             return Err("Cannot specify both target and targetPercent.".to_string());
         }
         if self.target.is_none() && self.target_percent.is_none() {
             return Err("Must specify either target or targetPercent.".to_string());
+        }
+
+        if let Some(indicator) = &self.indicatior {
+            indicator.validate()?;
+        }
+
+        if let Some(indicator_ref) = &self.indicator_ref {
+            let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
+                format!(
+                    "Indicator reference `{}` does not exist in the provided SLI map.",
+                    indicator_ref
+                )
+            })?;
+            indicator.validate()?;
         }
 
         Ok(())
