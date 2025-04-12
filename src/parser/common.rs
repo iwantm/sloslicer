@@ -1,7 +1,7 @@
 use regex::Regex;
 use serde::{Deserialize, Deserializer};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub enum Operator {
     #[serde(rename = "lte")]
     Lte,
@@ -15,8 +15,8 @@ pub enum Operator {
     Invalid,
 }
 
-#[derive(Debug)]
-pub struct DurationShorthand(String);
+#[derive(Debug, PartialEq)]
+pub struct DurationShorthand(pub String);
 
 impl<'de> Deserialize<'de> for DurationShorthand {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
