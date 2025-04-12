@@ -241,6 +241,7 @@ mod happy_path_tests {
     }
 }
 
+#[cfg(test)]
 mod unhappy_path_tests {
     use super::*;
     #[test]
