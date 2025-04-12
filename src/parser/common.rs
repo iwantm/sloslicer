@@ -40,3 +40,13 @@ impl DurationShorthand {
         &self.0
     }
 }
+
+#[derive(Debug, Deserialize)]
+pub enum BudgetingMethod {
+    #[serde(rename = "Occurrences")]
+    Occurrences,
+    #[serde(rename = "Timeslices")]
+    Timeslices,
+    #[serde(rename = "RatioTimeslices")]
+    RatioTimeslices,
+}

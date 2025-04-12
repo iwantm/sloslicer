@@ -12,6 +12,10 @@ pub struct SLISpec {
 }
 
 impl SLISpec {
+    pub fn is_threshold_metric(&self) -> bool {
+        self.threshold_metric.is_some()
+    }
+
     pub fn validate(&self, path: &str) -> ValidationResult {
         if self.threshold_metric.is_some() && self.ratio_metric.is_some() {
             return Err(ValidationError::new(

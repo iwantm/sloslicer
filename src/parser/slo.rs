@@ -1,692 +1,449 @@
-use serde::Deserialize;
-use std::collections::HashMap;
-
-use super::alert::AlertPolicySpec;
-use super::common::{DurationShorthand, Operator};
-use super::sli::SLISpec;
-use super::validation::{ValidationError, ValidationResult};
-
-#[derive(Debug, Deserialize)]
-pub struct SLOSpec {
-    pub description: Option<String>,
-    pub service: Option<String>,
-    pub indicator: Option<SLISpec>,
-    #[serde(rename = "indicatorRef")]
-    pub indicator_ref: Option<String>,
-    #[serde(rename = "timeWindow")]
-    pub time_window: Option<Vec<TimeWindow>>,
-    #[serde(rename = "budgetingMethod")]
-    pub budgeting_method: BudgetingMethod,
-    pub objectives: Vec<Objective>,
-    #[serde(rename = "alertPolicy")]
-    pub alert_policy: Option<Vec<AlertPolicySpec>>,
-}
-
-impl SLOSpec {
-    pub fn is_composite(&self) -> bool {
-        self.objectives
-            .iter()
-            .any(|objective| objective.indicator.is_some() || objective.indicator_ref.is_some())
-    }
-
-    pub fn validate(&self, sli_map: &HashMap<String, SLISpec>, path: &str) -> ValidationResult {
-        if self.is_composite() && (self.indicator.is_some() || self.indicator_ref.is_some()) {
-            return Err(ValidationError::new(
-                format!("{path}.indicator"),
-                "indicator or indicatorRef must be moved into objectives for composite SLOs",
-            ));
-        }
-
-        if !self.is_composite() {
-            if self.indicator.is_some() && self.indicator_ref.is_some() {
-                return Err(ValidationError::new(
-                    format!("{path}.indicator"),
-                    "Cannot specify both indicator and indicatorRef.",
-                ));
-            }
-
-            if self.indicator.is_none() && self.indicator_ref.is_none() {
-                return Err(ValidationError::new(
-                    format!("{path}.indicator"),
-                    "Must specify either indicator or indicatorRef in SLOSpec when not using composite SLOs.",
-                ));
-            }
-
-            if let Some(indicator) = &self.indicator {
-                indicator.validate(&format!("{path}.indicator"))?;
-            }
-
-            if let Some(indicator_ref) = &self.indicator_ref {
-                let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
-                    ValidationError::new(
-                        format!("{path}.indicatorRef"),
-                        format!("Indicator reference `{}` not found.", indicator_ref),
-                    )
-                })?;
-                indicator.validate(&format!("{path}.indicatorRef[{}]", indicator_ref))?;
-            }
-        }
-
-        if let Some(time_window) = &self.time_window {
-            if time_window.len() != 1 {
-                return Err(ValidationError::new(
-                    format!("{path}.timeWindow"),
-                    "timeWindow must contain exactly one item.",
-                ));
-            }
-            time_window[0].validate(&format!("{path}.timeWindow[0]"))?;
-        }
-
-        if self.objectives.is_empty() {
-            return Err(ValidationError::new(
-                format!("{path}.objectives"),
-                "objectives must contain at least one item.",
-            ));
-        }
-
-        if let Some(indicator) = &self.indicator {
-            if indicator.threshold_metric.is_some() && self.objectives.len() != 1 {
-                return Err(ValidationError::new(
-                    format!("{path}.objectives"),
-                    "Only one objective is allowed when using a `thresholdMetric`.",
-                ));
-            }
-        }
-
-        if let Some(indicator_ref) = &self.indicator_ref {
-            let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
-                ValidationError::new(
-                    format!("{path}.indicatorRef"),
-                    format!("Indicator reference `{}` not found.", indicator_ref),
-                )
-            })?;
-
-            if indicator.threshold_metric.is_some() && self.objectives.len() != 1 {
-                return Err(ValidationError::new(
-                    format!("{path}.objectives"),
-                    "Only one objective is allowed when using a `thresholdMetric`.",
-                ));
-            }
-        }
-
-        for (i, obj) in self.objectives.iter().enumerate() {
-            obj.validate(
-                &self.budgeting_method,
-                sli_map,
-                &format!("{path}.objectives[{}]", i),
-            )?;
-        }
-        Ok(())
-    }
-}
-
-fn default_composite_weight() -> f64 {
-    1.0
-}
-
-#[derive(Debug, Deserialize)]
-pub enum BudgetingMethod {
-    #[serde(rename = "Occurrences")]
-    Occurrences,
-    #[serde(rename = "Timeslices")]
-    Timeslices,
-    #[serde(rename = "RatioTimeslices")]
-    RatioTimeslices,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Objective {
-    #[serde(rename = "displayName")]
-    pub display_name: Option<String>,
-    pub op: Option<Operator>,
-    pub value: Option<f64>,
-    pub target: Option<f64>,
-    #[serde(rename = "targetPercent")]
-    pub target_percent: Option<f64>,
-    #[serde(rename = "timeSliceTarget")]
-    pub time_slice_target: Option<f64>,
-    #[serde(rename = "timeSliceWindow")]
-    pub time_slice_window: Option<DurationShorthand>,
-    pub indicator: Option<SLISpec>,
-    #[serde(rename = "indicatorRef")]
-    pub indicator_ref: Option<String>,
-    #[serde(default = "default_composite_weight", rename = "compositeWeight")]
-    pub composite_weight: f64,
-}
-
-impl Objective {
-    pub fn validate(
-        &self,
-        budgeting_method: &BudgetingMethod,
-        sli_map: &HashMap<String, SLISpec>,
-        path: &str,
-    ) -> ValidationResult {
-        if let Some(op) = &self.op {
-            if matches!(op, Operator::Invalid) {
-                return Err(ValidationError::new(
-                    format!("{path}.op"),
-                    "Invalid operator specified.",
-                ));
-            }
-        }
-
-        if self.target.is_some() && self.target_percent.is_some() {
-            return Err(ValidationError::new(
-                format!("{path}.target"),
-                "Cannot specify both target and targetPercent.",
-            ));
-        }
-        if self.target.is_none() && self.target_percent.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.target"),
-                "Must specify either target or targetPercent.",
-            ));
-        }
-
-        if self.target.is_some() && (self.target.unwrap() < 0.0 || self.target.unwrap() > 1.0) {
-            return Err(ValidationError::new(
-                format!("{path}.target"),
-                "Target must be between 0 and 1.",
-            ));
-        }
-
-        if self.target_percent.is_some()
-            && (self.target_percent.unwrap() < 0.0 || self.target_percent.unwrap() > 100.0)
-        {
-            return Err(ValidationError::new(
-                format!("{path}.targetPercent"),
-                "Target percent must be between 0 and 100.",
-            ));
-        }
-
-        if self.time_slice_target.is_some()
-            && (self.time_slice_target.unwrap() < 0.0 || self.time_slice_target.unwrap() > 1.0)
-        {
-            return Err(ValidationError::new(
-                format!("{path}.timeSliceTarget"),
-                "TimeSlice target must be between 0 and 1.",
-            ));
-        }
-
-        if self.op.is_some() && self.value.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.value"),
-                "Value must be specified when using an operator.",
-            ));
-        }
-        if self.value.is_some() && self.op.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.op"),
-                "Operator must be specified when using a value.",
-            ));
-        }
-
-        if self.composite_weight < 0.0 {
-            return Err(ValidationError::new(
-                format!("{path}.compositeWeight"),
-                "Composite weight must be greater than or equal to 0.",
-            ));
-        }
-
-        if let Some(indicator) = &self.indicator {
-            indicator.validate(&format!("{path}.indicator"))?;
-        }
-
-        if let Some(indicator_ref) = &self.indicator_ref {
-            let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
-                ValidationError::new(
-                    format!("{path}.indicatorRef"),
-                    format!("Indicator reference `{}` not found.", indicator_ref),
-                )
-            })?;
-
-            indicator.validate(&format!("{path}.indicator"))?;
-        }
-
-        if matches!(
-            budgeting_method,
-            BudgetingMethod::Timeslices | BudgetingMethod::RatioTimeslices
-        ) {
-            if self.time_slice_target.is_none() || self.time_slice_window.is_none() {
-                return Err(ValidationError::new(
-                    format!("{path}.timeSliceTarget"),
-                    "TimeSlices budgeting requires timeSliceTarget and timeSliceWindow.",
-                ));
-            }
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct TimeWindow {
-    pub duration: DurationShorthand,
-    pub calendar: Option<CalendarDetails>,
-    #[serde(rename = "isRolling")]
-    pub is_rolling: bool,
-}
-
-impl TimeWindow {
-    pub fn validate(&self, path: &str) -> ValidationResult {
-        if self.is_rolling && self.calendar.is_some() {
-            return Err(ValidationError::new(
-                format!("{path}.calendar"),
-                "Calendar details can only be specified for Calendar Aligned time windows.",
-            ));
-        }
-
-        if !self.is_rolling && self.calendar.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.calendar"),
-                "Calendar details must be specified for Calendar Aligned time windows.",
-            ));
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CalendarDetails {
-    #[serde(rename = "startTime")]
-    pub start_time: String,
-    #[serde(rename = "timeZone")]
-    pub time_zone: String,
-}
-
-#[cfg(test)]
-mod time_window_tests {
-    use super::*;
-    use serde_yaml;
-
-    #[test]
-    fn test_time_window_rolling_valid() {
-        let yaml = r#"
-        duration: 1h
-        isRolling: true
-        "#;
-
-        let time_window: TimeWindow = serde_yaml::from_str(yaml).unwrap();
-        let result = time_window.validate("timeWindow");
-        assert!(
-            result.is_ok(),
-            "Expected valid TimeWindow to pass validation"
-        );
-    }
-
-    #[test]
-    fn test_time_window_rolling_invalid() {
-        let yaml = r#"
-        duration: 1h
-        isRolling: false
-        "#;
-
-        let time_window: TimeWindow = serde_yaml::from_str(yaml).unwrap();
-        let result = time_window.validate("timeWindow");
-        assert!(
-            result.is_err(),
-            "Expected invalid TimeWindow to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_calendar_alligned_valid() {
-        let yaml = r#"
-        duration: 1h
-        isRolling: false
-        calendar:
-          startTime: "2023-01-01T00:00:00Z"
-          timeZone: "UTC"
-        "#;
-
-        let time_window: TimeWindow = serde_yaml::from_str(yaml).unwrap();
-        let result = time_window.validate("timeWindow");
-        assert!(
-            result.is_ok(),
-            "Expected valid TimeWindow to pass validation"
-        );
-    }
-
-    #[test]
-    fn test_calendar_alligned_invalid() {
-        let yaml = r#"
-        duration: 1h
-        isRolling: true
-        calendar:
-          startTime: "2023-01-01T00:00:00Z"
-          timeZone: "UTC"
-        "#;
-
-        let time_window: TimeWindow = serde_yaml::from_str(yaml).unwrap();
-        let result = time_window.validate("timeWindow");
-        assert!(
-            result.is_err(),
-            "Expected invalid TimeWindow to fail validation"
-        );
-    }
-}
-
-#[cfg(test)]
-mod objective_test {
-    use crate::parser::sli::{MetricSource, ThresholdMetric};
-
-    use super::*;
-    use serde_yaml;
-
-    // Valid Test Cases
-    #[test]
-    fn test_valid_objective_with_target_and_ref() {
-        let yaml = r#"
-        target: 0.99
-        indicatorRef: latency_indicator
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-        let mut sli_map = HashMap::new();
-
-        sli_map.insert(
-            "latency_indicator".to_string(),
-            SLISpec {
-                threshold_metric: Some(ThresholdMetric {
-                    metric_source: MetricSource {
-                        metric_source_ref: Some("datadoge".to_string()),
-                        type_: Some("datadoge".to_string()),
-                        spec: None,
-                    },
-                }),
-                description: None,
-                ratio_metric: None,
-                // Add other fields as necessary
-            },
-        );
-
-        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_ok(),
-            "Expected valid target objective to pass validation"
-        );
-    }
-
-    #[test]
-    fn test_valid_objective_with_target_percent_inline_sli() {
-        let yaml = r#"
-        targetPercent: 99.9
-        indicator:
-          thresholdMetric:
-            metric_source:
-              metric_source_ref: "datadoge"
-              type_: "datadoge"
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-        let sli_map = HashMap::new();
-        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_ok(),
-            "Expected valid target objective to pass validation"
-        );
-    }
-
-    #[test]
-    fn test_valid_threshold_objective() {
-        let yaml = r#"
-        op: lte
-        value: 500
-        target: 0.95
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-        let sli_map = HashMap::new();
-        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_ok(),
-            "Expected valid target objective to pass validation"
-        );
-    }
-
-    #[test]
-    fn test_valid_timeslice_objective() {
-        let yaml = r#"
-        targetPercent: 99.9
-        timeSliceTarget: 0.9
-        timeSliceWindow: 5m
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-        let sli_map = HashMap::new();
-        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_ok(),
-            "Expected valid target objective to pass validation"
-        );
-    }
-
-    #[test]
-    fn test_all_fields_set() {
-        let yaml = r#"
-        displayName: "Latency Objective"
-        op: gte
-        value: 200
-        targetPercent: 99.5
-        compositeWeight: 2
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_ok(),
-            "Expected valid target objective to pass validation"
-        );
-    }
-
-    // Invalid Test Cases
-
-    #[test]
-    fn test_invalid_target_and_target_percentage() {
-        let yaml = r#"
-        target: 0.99
-        targetPercent: 99.9
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_err(),
-            "Expected invalid target objective to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_invalid_no_target_or_percentage() {
-        let yaml = r#"
-        displayName: "Missing Target"
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_err(),
-            "Expected invalid target objective to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_invalid_target_range() {
-        let yaml = r#"
-        target: 1.2
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_err(),
-            "Expected invalid target objective to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_invalid_target_percentage_range() {
-        let yaml = r#"
-        targetPercent: 100.5
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_err(),
-            "Expected invalid target objective to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_invalid_time_slice_target() {
-        let yaml = r#"
-        targetPercent: 99.9
-        timeSliceTarget: 1.5
-        timeSliceWindow: 10m
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_err(),
-            "Expected invalid target objective to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_invalid_missing_value_with_op() {
-        let yaml = r#"
-        op: lt
-        target: 0.9
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_err(),
-            "Expected invalid target objective to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_invalid_composite_weight() {
-        let yaml = r#"
-        target: 0.99
-        compositeWeight: -1
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, "objective");
-        assert!(
-            result.is_err(),
-            "Expected invalid target objective to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_invalid_missing_timeslice_window_with_target() {
-        let yaml = r#"
-        target: 0.99
-        timeSliceTarget: 0.9
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Timeslices, &sli_map, "objective");
-        assert!(
-            result.is_err(),
-            "Expected invalid target objective to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_invalid_missing_target_with_timeslice_window() {
-        let yaml = r#"
-        target: 0.99
-        timeSliceWindow: 1h
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Timeslices, &sli_map, "objective");
-        assert!(
-            result.is_err(),
-            "Expected invalid target objective to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_invalid_enum_for_op() {
-        let yaml = r#"
-        op: equals
-        value: 500
-        target: 0.95
-        "#;
-
-        let objective: Objective = serde_yaml::from_str(yaml).unwrap();
-
-        let sli_map = HashMap::new();
-
-        let result: Result<(), ValidationError> =
-            objective.validate(&BudgetingMethod::Timeslices, &sli_map, "objective");
-        assert!(
-            result.is_err(),
-            "Expected invalid target objective to fail validation"
-        );
-    }
-
-    #[test]
-    fn test_invalid_duration() {
-        let yaml = r#"
-        targetPercent: 99.5
-        timeSliceTarget: 0.9
-        timeSliceWindow: "5x"
-        "#;
-
-        let objective: Result<Objective, _> = serde_yaml::from_str(yaml);
-
-        assert!(
-            objective.is_err(),
-            "Expected deserialization to fail for invalid duration format"
-        );
-    }
-}
+// use serde::Deserialize;
+// use std::collections::HashMap;
+
+// use super::alert::{AlertConditionSpec, AlertNotificationTargetSpec, AlertPolicySpec};
+// use super::common::{BudgetingMethod, DurationShorthand};
+// use super::objective::Objective;
+// use super::sli::SLISpec;
+// use super::validation::{ValidationError, ValidationResult};
+
+// #[derive(Debug, Deserialize)]
+// #[serde(untagged)]
+// pub enum AlertPolicy {
+//     Inline(AlertPolicySpec),
+//     Reference(String),
+// }
+
+// #[derive(Debug, Deserialize)]
+// pub struct SLOSpec {
+//     pub description: Option<String>,
+//     pub service: Option<String>,
+//     pub indicator: Option<SLISpec>,
+//     #[serde(rename = "indicatorRef")]
+//     pub indicator_ref: Option<String>,
+//     #[serde(rename = "timeWindow")]
+//     pub time_window: Option<Vec<TimeWindow>>,
+//     #[serde(rename = "budgetingMethod")]
+//     pub budgeting_method: BudgetingMethod,
+//     pub objectives: Vec<Objective>,
+//     #[serde(rename = "alertPolicy")]
+//     pub alert_policy: Option<Vec<AlertPolicy>>,
+// }
+
+// impl SLOSpec {
+//     pub fn is_composite(&self) -> bool {
+//         self.objectives
+//             .iter()
+//             .any(|objective| objective.indicator.is_some() || objective.indicator_ref.is_some())
+//     }
+
+//     pub fn validate(
+//         &self,
+//         sli_map: &HashMap<String, SLISpec>,
+//         alert_policy_map: &HashMap<String, AlertPolicySpec>,
+//         condition_map: &HashMap<String, AlertConditionSpec>,
+//         notification_target_map: &HashMap<String, AlertNotificationTargetSpec>,
+//         path: &str,
+//     ) -> ValidationResult {
+//         if self.is_composite() {
+//             if self.indicator.is_some() || self.indicator_ref.is_some() {
+//                 return Err(ValidationError::new(
+//                     format!("{path}.indicator"),
+//                     "indicator or indicatorRef must be moved into objectives for composite SLOs",
+//                 ));
+//             }
+
+//             self.objectives.iter().try_for_each(|objective| {
+//                 if let Some(indicator) = &objective.indicator {
+//                     if indicator.threshold_metric.is_some() {
+//                         return Err(ValidationError::new(
+//                             format!("{path}.objectives"),
+//                             "thresholdMetrics not allowed for composite SLOs.",
+//                         ));
+//                     }
+//                 }
+
+//                 if let Some(indicator_ref) = &objective.indicator_ref {
+//                     let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
+//                         ValidationError::new(
+//                             format!("{path}.objectives"),
+//                             format!("Indicator reference `{}` not found.", indicator_ref),
+//                         )
+//                     })?;
+//                     if indicator.threshold_metric.is_some() {
+//                         return Err(ValidationError::new(
+//                             format!("{path}.objectives"),
+//                             "thresholdMetrics not allowed for composite SLOs.",
+//                         ));
+//                     }
+//                 }
+
+//                 Ok(())
+//             })?;
+//         }
+//         if !self.is_composite() {
+//             if self.indicator.is_some() && self.indicator_ref.is_some() {
+//                 return Err(ValidationError::new(
+//                     format!("{path}.indicator"),
+//                     "Cannot specify both indicator and indicatorRef.",
+//                 ));
+//             }
+
+//             if self.indicator.is_none() && self.indicator_ref.is_none() {
+//                 return Err(ValidationError::new(
+//                     format!("{path}.indicator"),
+//                     "Must specify either indicator or indicatorRef in SLOSpec when not using composite SLOs.",
+//                 ));
+//             }
+
+//             if let Some(indicator) = &self.indicator {
+//                 indicator.validate(&format!("{path}.indicator"))?;
+//             }
+
+//             if let Some(indicator_ref) = &self.indicator_ref {
+//                 let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
+//                     ValidationError::new(
+//                         format!("{path}.indicatorRef"),
+//                         format!("Indicator reference `{}` not found.", indicator_ref),
+//                     )
+//                 })?;
+//                 indicator.validate(&format!("{path}.indicatorRef[{}]", indicator_ref))?;
+//             }
+//         }
+
+//         if let Some(time_window) = &self.time_window {
+//             if time_window.len() != 1 {
+//                 return Err(ValidationError::new(
+//                     format!("{path}.timeWindow"),
+//                     "timeWindow must contain exactly one item.",
+//                 ));
+//             }
+//             time_window[0].validate(&format!("{path}.timeWindow[0]"))?;
+//         }
+
+//         if self.objectives.is_empty() {
+//             return Err(ValidationError::new(
+//                 format!("{path}.objectives"),
+//                 "objectives must contain at least one item.",
+//             ));
+//         }
+
+//         if let Some(indicator) = &self.indicator {
+//             if indicator.threshold_metric.is_some() && self.objectives.len() != 1 {
+//                 return Err(ValidationError::new(
+//                     format!("{path}.objectives"),
+//                     "Only one objective is allowed when using a `thresholdMetric`.",
+//                 ));
+//             }
+//         }
+
+//         if let Some(indicator_ref) = &self.indicator_ref {
+//             let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
+//                 ValidationError::new(
+//                     format!("{path}.indicatorRef"),
+//                     format!("Indicator reference `{}` not found.", indicator_ref),
+//                 )
+//             })?;
+
+//             if indicator.threshold_metric.is_some() && self.objectives.len() != 1 {
+//                 return Err(ValidationError::new(
+//                     format!("{path}.objectives"),
+//                     "Only one objective is allowed when using a `thresholdMetric`.",
+//                 ));
+//             }
+//         }
+
+//         for (i, obj) in self.objectives.iter().enumerate() {
+//             obj.validate(
+//                 &self.budgeting_method,
+//                 sli_map,
+//                 &format!("{path}.objectives[{}]", i),
+//             )?;
+
+//             if let Some(alert_policy) = &self.alert_policy {
+//                 for (i, policy) in alert_policy.iter().enumerate() {
+//                     match policy {
+//                         AlertPolicy::Inline(alert_policy) => {
+//                             alert_policy.validate(condition_map, notification_target_map, path)?;
+//                         }
+//                         AlertPolicy::Reference(ref_name) => {
+//                             let alert_policy = alert_policy_map.get(ref_name).ok_or_else(|| {
+//                                 ValidationError::new(
+//                                     format!("{path}.alertPolicies.{}", i),
+//                                     format!("Alert Policy reference `{}` not found.", ref_name),
+//                                 )
+//                             })?;
+//                             alert_policy.validate(condition_map, notification_target_map, path)?;
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//         Ok(())
+//     }
+// }
+
+// #[derive(Debug, Deserialize)]
+// pub struct TimeWindow {
+//     pub duration: DurationShorthand,
+//     pub calendar: Option<CalendarDetails>,
+//     #[serde(rename = "isRolling")]
+//     pub is_rolling: bool,
+// }
+
+// impl TimeWindow {
+//     pub fn validate(&self, path: &str) -> ValidationResult {
+//         if self.is_rolling && self.calendar.is_some() {
+//             return Err(ValidationError::new(
+//                 format!("{path}.calendar"),
+//                 "Calendar details can only be specified for Calendar Aligned time windows.",
+//             ));
+//         }
+
+//         if !self.is_rolling && self.calendar.is_none() {
+//             return Err(ValidationError::new(
+//                 format!("{path}.calendar"),
+//                 "Calendar details must be specified for Calendar Aligned time windows.",
+//             ));
+//         }
+
+//         Ok(())
+//     }
+// }
+
+// #[derive(Debug, Deserialize)]
+// pub struct CalendarDetails {
+//     #[serde(rename = "startTime")]
+//     pub start_time: String,
+//     #[serde(rename = "timeZone")]
+//     pub time_zone: String,
+// }
+
+// #[cfg(test)]
+
+// mod tests {
+//     use crate::parser::sli::{MetricSource, RatioMetric, RawType, ThresholdMetric};
+
+//     use super::*;
+//     use serde_yaml;
+
+//     #[test]
+//     fn minimal_valid_slo() {
+//         let yaml = r#"
+//         service: payment-service
+//         indicator:
+//           thresholdMetric:
+//             metric_source:
+//               metric_source_ref: "datadoge"
+//               type_: "datadoge"
+//         budgetingMethod: Occurrences
+//         timeWindow:
+//             - duration: 30d
+//               isRolling: true
+//         objectives:
+//             - target: 0.95
+//               op: lt
+//               value: 200
+//         "#;
+
+//         let slo: SLOSpec = serde_yaml::from_str(yaml).unwrap();
+//         let sli_map = HashMap::new();
+//         let alert_policy_map = HashMap::new();
+//         let condition_map = HashMap::new();
+//         let notification_target_map = HashMap::new();
+
+//         let result = slo.validate(
+//             &sli_map,
+//             &alert_policy_map,
+//             &condition_map,
+//             &notification_target_map,
+//             "SLO",
+//         );
+
+//         assert!(result.is_ok(), "Expected valid SLO to pass validation");
+//     }
+
+//     #[test]
+//     fn calendar_window() {
+//         let yaml = r#"
+//         description: "Monthly uptime tracking"
+//         service: backend-api
+//         indicatorRef: availability-sli
+//         budgetingMethod: Timeslices
+//         timeWindow:
+//             - duration: 1M
+//               calendar:
+//                 startTime: "2025-04-01 00:00:00"
+//                 timeZone: "UTC"
+//               isRolling: false
+//         objectives:
+//             - targetPercent: 99.5
+//               timeSliceTarget: 0.99
+//               timeSliceWindow: 5m
+//         "#;
+
+//         let slo: SLOSpec = serde_yaml::from_str(yaml).unwrap();
+//         let mut sli_map = HashMap::new();
+//         let alert_policy_map = HashMap::new();
+//         let condition_map = HashMap::new();
+//         let notification_target_map = HashMap::new();
+
+//         sli_map.insert(
+//             "availability-sli".to_string(),
+//             SLISpec {
+//                 threshold_metric: Some(ThresholdMetric {
+//                     metric_source: MetricSource {
+//                         metric_source_ref: Some("datadoge".to_string()),
+//                         type_: Some("datadoge".to_string()),
+//                         spec: None,
+//                     },
+//                 }),
+//                 description: None,
+//                 ratio_metric: None,
+//                 // Add other fields as necessary
+//             },
+//         );
+
+//         let result = slo.validate(
+//             &sli_map,
+//             &alert_policy_map,
+//             &condition_map,
+//             &notification_target_map,
+//             "SLO",
+//         );
+
+//         assert!(result.is_ok(), "Expected valid SLO to pass validation");
+//     }
+
+//     #[test]
+//     fn composite_slo() {
+//         let yaml = r#"
+//         service: composite-service
+//         budgetingMethod: RatioTimeslices
+//         timeWindow:
+//             - duration: 7d
+//               isRolling: true
+//         objectives:
+//             - target: 0.98
+//               indicatorRef: slo-1
+//               compositeWeight: 1
+//               timeSliceTarget: 0.95
+//               timeSliceWindow: 1h
+//             - targetPercent: 99.9
+//               indicatorRef: slo-2
+//               compositeWeight: 2
+//               timeSliceTarget: 0.97
+//               timeSliceWindow: 1h
+//         "#;
+
+//         let slo: SLOSpec = serde_yaml::from_str(yaml).unwrap();
+//         let mut sli_map = HashMap::new();
+//         let alert_policy_map = HashMap::new();
+//         let condition_map = HashMap::new();
+//         let notification_target_map = HashMap::new();
+
+//         sli_map.insert(
+//             "slo-2".to_string(),
+//             SLISpec {
+//                 threshold_metric: None,
+//                 description: None,
+//                 ratio_metric: Some(RatioMetric {
+//                     counter: Some(true),
+//                     good: None,
+//                     bad: None,
+//                     total: None,
+//                     raw_type: Some(RawType::Success),
+//                     raw: Some(MetricSource {
+//                         metric_source_ref: Some("datadoge".to_string()),
+//                         type_: Some("datadoge".to_string()),
+//                         spec: None,
+//                     }),
+//                 }),
+//             },
+//         );
+
+//         sli_map.insert(
+//             "slo-1".to_string(),
+//             SLISpec {
+//                 threshold_metric: None,
+//                 description: None,
+//                 ratio_metric: Some(RatioMetric {
+//                     counter: Some(true),
+//                     good: Some(MetricSource {
+//                         metric_source_ref: Some("datadoge".to_string()),
+//                         type_: Some("datadoge".to_string()),
+//                         spec: None,
+//                     }),
+//                     bad: None,
+//                     total: Some(MetricSource {
+//                         metric_source_ref: Some("datadoge".to_string()),
+//                         type_: Some("datadoge".to_string()),
+//                         spec: None,
+//                     }),
+//                     raw_type: None,
+//                     raw: None,
+//                 }),
+//             },
+//         );
+
+//         let result = slo.validate(
+//             &sli_map,
+//             &alert_policy_map,
+//             &condition_map,
+//             &notification_target_map,
+//             "SLO",
+//         );
+
+//         println!("{:?}", result);
+//         assert!(result.is_ok(), "Expected valid SLO to pass validation");
+//     }
+
+//     #[test]
+//     fn alert_policy_ref() {
+//         let yaml = r#"
+//         service: alerts-service
+//         indicatorRef: error-rate-sli
+//         budgetingMethod: Occurrences
+//         timeWindow:
+//             - duration: 30d
+//               isRolling: true
+//         objectives:
+//             - target: 0.99
+//         alertPolicies:
+//             - alertPolicyRef: high-error-rate-alert
+//         "#;
+
+//         let slo: SLOSpec = serde_yaml::from_str(yaml).unwrap();
+//         let mut sli_map = HashMap::new();
+//         let alert_policy_map = HashMap::new();
+//         let condition_map = HashMap::new();
+//         let notification_target_map = HashMap::new();
+
+//         sli_map.insert(
+//             "error-rate-sli".to_string(),
+//             SLISpec {
+//                 threshold_metric: Some(ThresholdMetric {
+//                     metric_source: MetricSource {
+//                         metric_source_ref: Some("datadoge".to_string()),
+//                         type_: Some("datadoge".to_string()),
+//                         spec: None,
+//                     },
+//                 }),
+//                 description: None,
+//                 ratio_metric: None,
+//                 // Add other fields as necessary
+//             },
+//         );
+
+//         let result = slo.validate(
+//             &sli_map,
+//             &alert_policy_map,
+//             &condition_map,
+//             &notification_target_map,
+//             "SLO",
+//         );
+
+//         println!("{:?}", result);
+//         assert!(result.is_ok(), "Expected valid SLO to pass validation");
+//     }
+// }
