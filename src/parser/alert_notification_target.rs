@@ -1,17 +1,36 @@
-use super::validation::{ValidationError, ValidationResult};
+use super::{
+    document::{Kind, Metadata},
+    validation::{ValidationError, ValidationResult},
+};
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum NotificationTargetSpec {
-    Inline(AlertNotificationTargetSpec),
-    Reference(String),
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct AlertNotificationTargetDocument {
+    pub kind: Kind,
+    pub metadata: Metadata,
+    pub spec: AlertNotificationTargetSpec,
 }
 
-#[derive(Debug, Deserialize)]
+impl AlertNotificationTargetDocument {
+    pub fn validate(&self, path: Option<String>) -> ValidationResult {
+        if !matches!(self.kind, Kind::AlertNotificationTarget) {
+            return Err(ValidationError::new(
+                "kind",
+                "Invalid kind specified. Expected `AlertNotificationTarget`.",
+            ));
+        }
+
+        match path {
+            Some(path) => self.spec.validate(&path),
+            None => self.spec.validate("alert_notification_target"),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct AlertNotificationTargetSpec {
-    target: String,
-    description: Option<String>,
+    pub target: String,
+    pub description: Option<String>,
 }
 
 impl AlertNotificationTargetSpec {
@@ -23,5 +42,84 @@ impl AlertNotificationTargetSpec {
             ));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+
+mod happy_path_tests {
+    use crate::parser::document::StringOrVec;
+
+    use super::*;
+
+    #[test]
+    fn test_alert_notification_target_spec() {
+        let expected = AlertNotificationTargetDocument {
+            kind: Kind::AlertNotificationTarget,
+            metadata: Metadata {
+                name: "test".to_string(),
+                display_name: None,
+                labels: {
+                    let mut map = std::collections::HashMap::new();
+                    map.insert("env".to_string(), StringOrVec::Single("test".to_string()));
+                    Some(map)
+                },
+                annotations: None,
+            },
+            spec: AlertNotificationTargetSpec {
+                target: "slack".to_string(),
+                description: None,
+            },
+        };
+
+        let yaml = r#"
+        kind: AlertNotificationTarget
+        metadata:
+            name: test
+            labels:
+                env: test
+        spec:
+            target: slack
+        "#;
+
+        let alert_condition: AlertNotificationTargetDocument = serde_yaml::from_str(yaml).unwrap();
+
+        let result = alert_condition.validate(None);
+
+        assert!(expected == alert_condition);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_alert_notification_target_spec_full() {
+        let expected = AlertNotificationTargetDocument {
+            kind: Kind::AlertNotificationTarget,
+            metadata: Metadata {
+                name: "test".to_string(),
+                display_name: None,
+                labels: None,
+                annotations: None,
+            },
+            spec: AlertNotificationTargetSpec {
+                target: "slack".to_string(),
+                description: Some("Slack channel".to_string()),
+            },
+        };
+
+        let yaml = r#"
+        kind: AlertNotificationTarget
+        metadata:
+            name: test
+        spec:
+            target: slack
+            description: Slack channel
+        "#;
+
+        let alert_condition: AlertNotificationTargetDocument = serde_yaml::from_str(yaml).unwrap();
+
+        let result = alert_condition.validate(None);
+
+        assert!(expected == alert_condition);
+        assert!(result.is_ok());
     }
 }

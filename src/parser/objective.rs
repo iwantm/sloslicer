@@ -207,7 +207,7 @@ impl Objective {
 
 #[cfg(test)]
 
-mod tests {
+mod happy_path_tests {
     use crate::parser::sli::{MetricSource, RatioMetric, ThresholdMetric};
 
     use super::*;
@@ -295,7 +295,6 @@ mod tests {
 
         let sli_map = default_sli_map();
         let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
-        println!("{:?}", result);
 
         assert!(result.is_ok());
     }
@@ -327,7 +326,6 @@ mod tests {
 
         let sli_map = default_sli_map();
         let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
-        println!("{:?}", result);
 
         assert!(result.is_ok());
     }
@@ -353,6 +351,55 @@ mod tests {
 
         assert!(result.is_ok());
     }
+}
+
+mod unhappy_path_tests {
+    use super::*;
+    use crate::parser::sli::{MetricSource, RatioMetric, ThresholdMetric};
+
+    fn default_sli_map() -> HashMap<String, SLISpec> {
+        let mut sli_map = HashMap::new();
+        sli_map.insert(
+            "threshold_metric".to_string(),
+            SLISpec {
+                threshold_metric: Some(ThresholdMetric {
+                    metric_source: MetricSource {
+                        metric_source_ref: Some("some_errors".to_string()),
+                        type_: Some("datadoge".to_string()),
+                        spec: None,
+                    },
+                }),
+                ratio_metric: None,
+                description: None,
+            },
+        );
+
+        sli_map.insert(
+            "ratio_metric".to_string(),
+            SLISpec {
+                description: None,
+                threshold_metric: None,
+                ratio_metric: Some(RatioMetric {
+                    counter: Some(true),
+                    good: Some(MetricSource {
+                        metric_source_ref: Some("good".to_string()),
+                        type_: Some("datadoge".to_string()),
+                        spec: None,
+                    }),
+                    bad: Some(MetricSource {
+                        metric_source_ref: Some("bad".to_string()),
+                        type_: Some("datadoge".to_string()),
+                        spec: None,
+                    }),
+                    total: None,
+                    raw_type: None,
+                    raw: None,
+                }),
+            },
+        );
+
+        sli_map
+    }
 
     #[test]
     fn test_invalid_target_both() {
@@ -372,15 +419,11 @@ mod tests {
         let sli_map = default_sli_map();
         let result =
             objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
-        println!("{:?}", result);
 
-        assert!(matches!(
-            result,
-            Err(ValidationError {
-                path: ref p,
-                message: ref m,
-            }) if p == "test_path.target" && m == "Cannot specify both target and targetPercent."
-        ));
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.target"
+                && e.message == "Cannot specify both target and targetPercent."
+        }));
     }
 
     #[test]
@@ -401,15 +444,11 @@ mod tests {
         let sli_map = default_sli_map();
         let result =
             objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
-        println!("{:?}", result);
 
-        assert!(matches!(
-            result,
-            Err(ValidationError {
-                path: ref p,
-                message: ref m,
-            }) if p == "test_path.target" && m == "Must specify either target or targetPercent."
-        ));
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.target"
+                && e.message == "Must specify either target or targetPercent."
+        }));
     }
 
     #[test]
@@ -434,15 +473,11 @@ mod tests {
             false,
             "test_path",
         );
-        println!("{:?}", result);
 
-        assert!(matches!(
-            result,
-            Err(ValidationError {
-                path: ref p,
-                message: ref m,
-            }) if p == "test_path.timeSliceTarget" && m == "TimeSlices budgeting requires timeSliceTarget and timeSliceWindow."
-        ));
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.timeSliceTarget"
+                && e.message == "TimeSlices budgeting requires timeSliceTarget and timeSliceWindow."
+        }));
     }
 
     #[test]
@@ -462,15 +497,11 @@ mod tests {
 
         let sli_map = default_sli_map();
         let result = objective.validate(&BudgetingMethod::Timeslices, &sli_map, false, "test_path");
-        println!("{:?}", result);
 
-        assert!(matches!(
-            result,
-            Err(ValidationError {
-                path: ref p,
-                message: ref m,
-            }) if p == "test_path.timeSliceTarget" && m == "TimeSlice target must be between 0 and 1."
-        ));
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.timeSliceTarget"
+                && e.message == "TimeSlice target must be between 0 and 1."
+        }));
     }
 
     #[test]
@@ -491,15 +522,11 @@ mod tests {
         let sli_map = default_sli_map();
         let result =
             objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
-        println!("{:?}", result);
 
-        assert!(matches!(
-            result,
-            Err(ValidationError {
-                path: ref p,
-                message: ref m,
-            }) if p == "test_path.value" && m == "Value must be specified when using an operator."
-        ));
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.value"
+                && e.message == "Value must be specified when using an operator."
+        }));
     }
 
     #[test]
@@ -520,15 +547,11 @@ mod tests {
         let sli_map = default_sli_map();
         let result =
             objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
-        println!("{:?}", result);
 
-        assert!(matches!(
-            result,
-            Err(ValidationError {
-                path: ref p,
-                message: ref m,
-            }) if p == "test_path.op" && m == "Operator must be specified when using a value."
-        ));
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.op"
+                && e.message == "Operator must be specified when using a value."
+        }));
     }
 
     #[test]
@@ -548,15 +571,12 @@ mod tests {
 
         let sli_map = default_sli_map();
         let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
-        println!("{:?}", result);
 
-        assert!(matches!(
-            result,
-            Err(ValidationError {
-                path: ref p,
-                message: ref m,
-            }) if p == "test_path.indicator" && m == "Indicator or indicatorRef must be specified for composite objectives."
-        ));
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.indicator"
+                && e.message
+                    == "Indicator or indicatorRef must be specified for composite objectives."
+        }));
     }
 
     #[test]
@@ -586,15 +606,11 @@ mod tests {
 
         let sli_map = default_sli_map();
         let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
-        println!("{:?}", result);
 
-        assert!(matches!(
-            result,
-            Err(ValidationError {
-                path: ref p,
-                message: ref m,
-            }) if p == "test_path.indicator" && m == "Cannot specify both indicator and indicatorRef."
-        ));
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.indicator"
+                && e.message == "Cannot specify both indicator and indicatorRef."
+        }));
     }
 
     #[test]
@@ -614,15 +630,11 @@ mod tests {
 
         let sli_map = default_sli_map();
         let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
-        println!("{:?}", result);
 
-        assert!(matches!(
-            result,
-            Err(ValidationError {
-                path: ref p,
-                message: ref m,
-            }) if p == "test_path.compositeWeight" && m == "Composite weight must be greater than or equal to 0."
-        ));
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.compositeWeight"
+                && e.message == "Composite weight must be greater than or equal to 0."
+        }));
     }
 
     #[test]
@@ -643,14 +655,10 @@ mod tests {
         let sli_map = default_sli_map();
         let result =
             objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
-        println!("{:?}", result);
 
-        assert!(matches!(
-            result,
-            Err(ValidationError {
-                path: ref p,
-                message: ref m,
-            }) if p == "test_path.compositeWeight" && m == "Composite weight must not be specified for single objectives."
-        ));
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.compositeWeight"
+                && e.message == "Composite weight must not be specified for single objectives."
+        }));
     }
 }
