@@ -142,7 +142,7 @@ impl Objective {
 
     fn validate_indicators(
         &self,
-        sli_map: &HashMap<String, SLISpec>,
+        sli_map: Option<&HashMap<String, SLIDoc>>,
         is_composite: bool,
         path: &str,
     ) -> ValidationResult {
@@ -173,21 +173,23 @@ impl Objective {
             }
 
             if let Some(indicator_ref) = &self.indicator_ref {
-                let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
-                    ValidationError::new(
-                        format!("{path}.indicatorRef"),
-                        format!("Indicator reference `{}` not found.", indicator_ref),
-                    )
-                })?;
+                if let Some(sli_map) = sli_map {
+                    let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
+                        ValidationError::new(
+                            format!("{path}.indicatorRef"),
+                            format!("Indicator reference `{}` not found.", indicator_ref),
+                        )
+                    })?;
 
-                if indicator.is_threshold_metric() && (self.op.is_none() || self.value.is_none()) {
-                    return Err(ValidationError::new(
-                        format!("{path}.indicator"),
-                        "op and value must be specified when using a thresholdMetric.",
-                    ));
+                    if indicator.spec.is_threshold_metric()
+                        && (self.op.is_none() || self.value.is_none())
+                    {
+                        return Err(ValidationError::new(
+                            format!("{path}.indicator"),
+                            "op and value must be specified when using a thresholdMetric.",
+                        ));
+                    }
                 }
-
-                indicator.validate(&format!("{path}.indicator"))?;
             }
 
             if let Some(composite_weight) = self.composite_weight {
@@ -221,14 +223,21 @@ impl Objective {
     pub fn validate(
         &self,
         budgeting_method: &BudgetingMethod,
-        sli_map: &HashMap<String, SLISpec>,
+        sli_map: Option<&HashMap<String, SLIDoc>>,
         is_composite: bool,
         path: &str,
     ) -> ValidationResult {
         self.validate_target(path)?;
         self.validate_timeslice(budgeting_method, path)?;
         self.validate_operators(path)?;
-        self.validate_indicators(sli_map, is_composite, path)?;
+
+        if is_composite {
+            if let Some(sli_map) = sli_map {
+                self.validate_indicators(Some(sli_map), is_composite, path)?;
+            }
+        }
+
+        self.validate_indicators(None, is_composite, path)?;
 
         Ok(())
     }
@@ -238,50 +247,68 @@ impl Objective {
 
 mod happy_path_tests {
     use crate::parser::{
-        document::Metadata,
+        document::{Kind, Metadata},
         sli::{MetricSource, RatioMetric, ThresholdMetric},
     };
 
     use super::*;
 
-    fn default_sli_map() -> HashMap<String, SLISpec> {
+    fn default_sli_map() -> HashMap<String, SLIDoc> {
         let mut sli_map = HashMap::new();
         sli_map.insert(
             "threshold_metric".to_string(),
-            SLISpec {
-                threshold_metric: Some(ThresholdMetric {
-                    metric_source: MetricSource {
-                        metric_source_ref: Some("some_errors".to_string()),
-                        type_: Some("datadoge".to_string()),
-                        spec: None,
-                    },
-                }),
-                ratio_metric: None,
-                description: None,
+            SLIDoc {
+                spec: SLISpec {
+                    threshold_metric: Some(ThresholdMetric {
+                        metric_source: MetricSource {
+                            metric_source_ref: Some("some_errors".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        },
+                    }),
+                    ratio_metric: None,
+                    description: None,
+                },
+                kind: Some(Kind::SLI),
+                metadata: Metadata {
+                    name: "Test SLI".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
             },
         );
 
         sli_map.insert(
             "ratio_metric".to_string(),
-            SLISpec {
-                description: None,
-                threshold_metric: None,
-                ratio_metric: Some(RatioMetric {
-                    counter: Some(true),
-                    good: Some(MetricSource {
-                        metric_source_ref: Some("good".to_string()),
-                        type_: Some("datadoge".to_string()),
-                        spec: None,
+            SLIDoc {
+                kind: Some(Kind::SLI),
+                metadata: Metadata {
+                    name: "Test SLI".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
+                spec: SLISpec {
+                    description: None,
+                    threshold_metric: None,
+                    ratio_metric: Some(RatioMetric {
+                        counter: Some(true),
+                        good: Some(MetricSource {
+                            metric_source_ref: Some("good".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        }),
+                        bad: Some(MetricSource {
+                            metric_source_ref: Some("bad".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        }),
+                        total: None,
+                        raw_type: None,
+                        raw: None,
                     }),
-                    bad: Some(MetricSource {
-                        metric_source_ref: Some("bad".to_string()),
-                        type_: Some("datadoge".to_string()),
-                        spec: None,
-                    }),
-                    total: None,
-                    raw_type: None,
-                    raw: None,
-                }),
+                },
             },
         );
 
@@ -303,9 +330,7 @@ mod happy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
+        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
         assert!(result.is_ok());
     }
@@ -326,7 +351,12 @@ mod happy_path_tests {
         };
 
         let sli_map = default_sli_map();
-        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            Some(&sli_map),
+            true,
+            "test_path",
+        );
 
         assert!(result.is_ok());
     }
@@ -374,9 +404,7 @@ mod happy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
-        println!("{:?}", result);
+        let result = objective.validate(&BudgetingMethod::Occurrences, None, true, "test_path");
         assert!(result.is_ok());
     }
 
@@ -395,9 +423,7 @@ mod happy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
+        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
         assert!(result.is_ok());
     }
@@ -406,48 +432,66 @@ mod happy_path_tests {
 mod unhappy_path_tests {
     use super::*;
     use crate::parser::{
-        document::Metadata,
+        document::{Kind, Metadata},
         sli::{MetricSource, RatioMetric, ThresholdMetric},
     };
 
-    fn default_sli_map() -> HashMap<String, SLISpec> {
+    fn default_sli_map() -> HashMap<String, SLIDoc> {
         let mut sli_map = HashMap::new();
         sli_map.insert(
             "threshold_metric".to_string(),
-            SLISpec {
-                threshold_metric: Some(ThresholdMetric {
-                    metric_source: MetricSource {
-                        metric_source_ref: Some("some_errors".to_string()),
-                        type_: Some("datadoge".to_string()),
-                        spec: None,
-                    },
-                }),
-                ratio_metric: None,
-                description: None,
+            SLIDoc {
+                spec: SLISpec {
+                    threshold_metric: Some(ThresholdMetric {
+                        metric_source: MetricSource {
+                            metric_source_ref: Some("some_errors".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        },
+                    }),
+                    ratio_metric: None,
+                    description: None,
+                },
+                kind: Some(Kind::SLI),
+                metadata: Metadata {
+                    name: "Test SLI".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
             },
         );
 
         sli_map.insert(
             "ratio_metric".to_string(),
-            SLISpec {
-                description: None,
-                threshold_metric: None,
-                ratio_metric: Some(RatioMetric {
-                    counter: Some(true),
-                    good: Some(MetricSource {
-                        metric_source_ref: Some("good".to_string()),
-                        type_: Some("datadoge".to_string()),
-                        spec: None,
+            SLIDoc {
+                kind: Some(Kind::SLI),
+                metadata: Metadata {
+                    name: "Test SLI".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
+                spec: SLISpec {
+                    description: None,
+                    threshold_metric: None,
+                    ratio_metric: Some(RatioMetric {
+                        counter: Some(true),
+                        good: Some(MetricSource {
+                            metric_source_ref: Some("good".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        }),
+                        bad: Some(MetricSource {
+                            metric_source_ref: Some("bad".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        }),
+                        total: None,
+                        raw_type: None,
+                        raw: None,
                     }),
-                    bad: Some(MetricSource {
-                        metric_source_ref: Some("bad".to_string()),
-                        type_: Some("datadoge".to_string()),
-                        spec: None,
-                    }),
-                    total: None,
-                    raw_type: None,
-                    raw: None,
-                }),
+                },
             },
         );
 
@@ -469,9 +513,7 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
+        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
         assert!(result.is_err_and(|e| {
             e.path == "test_path.target"
@@ -494,9 +536,7 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
+        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
         assert!(result.is_err_and(|e| {
             e.path == "test_path.target"
@@ -519,13 +559,8 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result = objective.validate(
-            &BudgetingMethod::RatioTimeslices,
-            &sli_map,
-            false,
-            "test_path",
-        );
+        let result =
+            objective.validate(&BudgetingMethod::RatioTimeslices, None, false, "test_path");
 
         assert!(result.is_err_and(|e| {
             e.path == "test_path.timeSliceTarget"
@@ -548,8 +583,7 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result = objective.validate(&BudgetingMethod::Timeslices, &sli_map, false, "test_path");
+        let result = objective.validate(&BudgetingMethod::Timeslices, None, false, "test_path");
 
         assert!(result.is_err_and(|e| {
             e.path == "test_path.timeSliceTarget"
@@ -572,9 +606,7 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
+        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
         assert!(result.is_err_and(|e| {
             e.path == "test_path.value"
@@ -597,9 +629,7 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
+        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
         assert!(result.is_err_and(|e| {
             e.path == "test_path.op"
@@ -622,8 +652,7 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
+        let result = objective.validate(&BudgetingMethod::Occurrences, None, true, "test_path");
 
         assert!(result.is_err_and(|e| {
             e.path == "test_path.indicator"
@@ -667,7 +696,12 @@ mod unhappy_path_tests {
         };
 
         let sli_map = default_sli_map();
-        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            Some(&sli_map),
+            true,
+            "test_path",
+        );
 
         assert!(result.is_err_and(|e| {
             e.path == "test_path.indicator"
@@ -691,7 +725,12 @@ mod unhappy_path_tests {
         };
 
         let sli_map = default_sli_map();
-        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            Some(&sli_map),
+            true,
+            "test_path",
+        );
 
         assert!(result.is_err_and(|e| {
             e.path == "test_path.compositeWeight"
@@ -714,9 +753,7 @@ mod unhappy_path_tests {
             composite_weight: Some(1.0),
         };
 
-        let sli_map = default_sli_map();
-        let result =
-            objective.validate(&BudgetingMethod::Occurrences, &sli_map, false, "test_path");
+        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
         assert!(result.is_err_and(|e| {
             e.path == "test_path.compositeWeight"
@@ -758,9 +795,8 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
-        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
-        println!("{:?}", result);
+        let result = objective.validate(&BudgetingMethod::Occurrences, None, true, "test_path");
+
         assert!(result.is_err_and(|e| {
             e.path == "test_path.indicator"
                 && e.message == "Can't use thresholdMetric in composite objectives."
