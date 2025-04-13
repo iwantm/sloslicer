@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
+use super::alert_policy::AlertPolicySpec;
 use super::data_source::DataSourceSpec;
 use super::sli::SLISpec;
 use crate::parser::alert_condition::AlertConditionSpec;
@@ -33,7 +34,7 @@ pub enum Spec {
     DataSource(DataSourceSpec),
     // SLO(SLOSpec),
     SLI(SLISpec),
-    // AlertPolicy(AlertPolicySpec),
+    AlertPolicy(AlertPolicySpec),
     AlertCondition(AlertConditionSpec),
     AlertNotificationTarget(AlertNotificationTargetSpec),
     // Service(ServiceSpec),

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 
 use super::common::{BudgetingMethod, DurationShorthand, Operator};
-use super::sli::SLISpec;
+use super::sli::{SLIDoc, SLISpec};
 use super::validation::{ValidationError, ValidationResult};
 
 #[derive(Debug, Deserialize)]
@@ -42,7 +42,7 @@ pub struct Objective {
     pub time_slice_target: Option<f64>,
     #[serde(rename = "timeSliceWindow")]
     pub time_slice_window: Option<TimeSliceWindow>,
-    pub indicator: Option<SLISpec>,
+    pub indicator: Option<SLIDoc>,
     #[serde(rename = "indicatorRef")]
     pub indicator_ref: Option<String>,
     #[serde(rename = "compositeWeight")]
@@ -50,22 +50,7 @@ pub struct Objective {
 }
 
 impl Objective {
-    pub fn validate(
-        &self,
-        budgeting_method: &BudgetingMethod,
-        sli_map: &HashMap<String, SLISpec>,
-        is_composite: bool,
-        path: &str,
-    ) -> ValidationResult {
-        if let Some(op) = &self.op {
-            if matches!(op, Operator::Invalid) {
-                return Err(ValidationError::new(
-                    format!("{path}.op"),
-                    "Invalid operator specified.",
-                ));
-            }
-        }
-
+    fn validate_target(&self, path: &str) -> ValidationResult {
         if self.target.is_some() && self.target_percent.is_some() {
             return Err(ValidationError::new(
                 format!("{path}.target"),
@@ -81,7 +66,7 @@ impl Objective {
         }
 
         if let Some(target_percent) = self.target_percent {
-            if target_percent < 0.0 || target_percent > 100.0 {
+            if target_percent <= 0.0 || target_percent >= 100.0 {
                 return Err(ValidationError::new(
                     format!("{path}.targetPercent"),
                     "Target percent must be between 0 and 100.",
@@ -90,14 +75,21 @@ impl Objective {
         }
 
         if let Some(target) = self.target {
-            if target < 0.0 || target > 1.0 {
+            if target <= 0.0 || target >= 1.0 {
                 return Err(ValidationError::new(
                     format!("{path}.target"),
                     "Target must be between 0 and 1.",
                 ));
             }
         }
+        Ok(())
+    }
 
+    fn validate_timeslice(
+        &self,
+        budgeting_method: &BudgetingMethod,
+        path: &str,
+    ) -> ValidationResult {
         if matches!(
             budgeting_method,
             BudgetingMethod::Timeslices | BudgetingMethod::RatioTimeslices
@@ -108,8 +100,9 @@ impl Objective {
                     "TimeSlices budgeting requires timeSliceTarget and timeSliceWindow.",
                 ));
             }
-            if let Some(time_slice_target) = self.time_slice_target {
-                if time_slice_target < 0.0 || time_slice_target > 1.0 {
+
+            if let Some(tst) = self.time_slice_target {
+                if tst <= 0.0 || tst > 1.0 {
                     return Err(ValidationError::new(
                         format!("{path}.timeSliceTarget"),
                         "TimeSlice target must be between 0 and 1.",
@@ -117,7 +110,10 @@ impl Objective {
                 }
             }
         }
+        Ok(())
+    }
 
+    fn validate_operators(&self, path: &str) -> ValidationResult {
         if self.op.is_some() && self.value.is_none() {
             return Err(ValidationError::new(
                 format!("{path}.value"),
@@ -132,40 +128,29 @@ impl Objective {
             ));
         }
 
+        if let Some(op) = &self.op {
+            if matches!(op, Operator::Invalid) {
+                return Err(ValidationError::new(
+                    format!("{path}.op"),
+                    "Invalid operator specified.",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_indicators(
+        &self,
+        sli_map: &HashMap<String, SLISpec>,
+        is_composite: bool,
+        path: &str,
+    ) -> ValidationResult {
         if self.indicator.is_some() && self.indicator_ref.is_some() {
             return Err(ValidationError::new(
                 format!("{path}.indicator"),
                 "Cannot specify both indicator and indicatorRef.",
             ));
-        }
-
-        if let Some(indicator) = &self.indicator {
-            if indicator.is_threshold_metric() && (self.op.is_none() || self.value.is_none()) {
-                return Err(ValidationError::new(
-                    format!("{path}.indicator"),
-                    "op and value must be specified when using a thresholdMetric.",
-                ));
-            }
-
-            indicator.validate(&format!("{path}.indicator"))?;
-        }
-
-        if let Some(indicator_ref) = &self.indicator_ref {
-            let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
-                ValidationError::new(
-                    format!("{path}.indicatorRef"),
-                    format!("Indicator reference `{}` not found.", indicator_ref),
-                )
-            })?;
-
-            if indicator.is_threshold_metric() && (self.op.is_none() || self.value.is_none()) {
-                return Err(ValidationError::new(
-                    format!("{path}.indicator"),
-                    "op and value must be specified when using a thresholdMetric.",
-                ));
-            }
-
-            indicator.validate(&format!("{path}.indicator"))?;
         }
 
         if is_composite {
@@ -175,6 +160,44 @@ impl Objective {
                     "Indicator or indicatorRef must be specified for composite objectives.",
                 ));
             }
+
+            if let Some(indicator) = &self.indicator {
+                if indicator.spec.is_threshold_metric() {
+                    return Err(ValidationError::new(
+                        format!("{path}.indicator"),
+                        "Can't use thresholdMetric in composite objectives.",
+                    ));
+                }
+
+                indicator.validate(true, Some(format!("{path}.indicator")))?;
+            }
+
+            if let Some(indicator_ref) = &self.indicator_ref {
+                let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
+                    ValidationError::new(
+                        format!("{path}.indicatorRef"),
+                        format!("Indicator reference `{}` not found.", indicator_ref),
+                    )
+                })?;
+
+                if indicator.is_threshold_metric() && (self.op.is_none() || self.value.is_none()) {
+                    return Err(ValidationError::new(
+                        format!("{path}.indicator"),
+                        "op and value must be specified when using a thresholdMetric.",
+                    ));
+                }
+
+                indicator.validate(&format!("{path}.indicator"))?;
+            }
+
+            if let Some(composite_weight) = self.composite_weight {
+                if composite_weight < 0.0 {
+                    return Err(ValidationError::new(
+                        format!("{path}.compositeWeight"),
+                        "Composite weight must be greater than or equal to 0.",
+                    ));
+                }
+            };
         }
 
         if !is_composite {
@@ -192,14 +215,20 @@ impl Objective {
             }
         }
 
-        if let Some(composite_weight) = self.composite_weight {
-            if composite_weight < 0.0 {
-                return Err(ValidationError::new(
-                    format!("{path}.compositeWeight"),
-                    "Composite weight must be greater than or equal to 0.",
-                ));
-            }
-        };
+        Ok(())
+    }
+
+    pub fn validate(
+        &self,
+        budgeting_method: &BudgetingMethod,
+        sli_map: &HashMap<String, SLISpec>,
+        is_composite: bool,
+        path: &str,
+    ) -> ValidationResult {
+        self.validate_target(path)?;
+        self.validate_timeslice(budgeting_method, path)?;
+        self.validate_operators(path)?;
+        self.validate_indicators(sli_map, is_composite, path)?;
 
         Ok(())
     }
@@ -208,7 +237,10 @@ impl Objective {
 #[cfg(test)]
 
 mod happy_path_tests {
-    use crate::parser::sli::{MetricSource, RatioMetric, ThresholdMetric};
+    use crate::parser::{
+        document::Metadata,
+        sli::{MetricSource, RatioMetric, ThresholdMetric},
+    };
 
     use super::*;
 
@@ -309,16 +341,34 @@ mod happy_path_tests {
             target_percent: Some(90.0),
             time_slice_target: None,
             time_slice_window: None,
-            indicator: Some(SLISpec {
-                description: None,
-                ratio_metric: None,
-                threshold_metric: Some(ThresholdMetric {
-                    metric_source: MetricSource {
-                        metric_source_ref: Some("some_errors".to_string()),
-                        type_: Some("datadoge".to_string()),
-                        spec: None,
-                    },
-                }),
+            indicator: Some(SLIDoc {
+                kind: None,
+                metadata: Metadata {
+                    name: "Test SLI".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
+                spec: SLISpec {
+                    description: None,
+                    ratio_metric: Some(RatioMetric {
+                        counter: Some(true),
+                        good: Some(MetricSource {
+                            metric_source_ref: Some("good".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        }),
+                        bad: None,
+                        total: Some(MetricSource {
+                            metric_source_ref: Some("bad".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        }),
+                        raw_type: None,
+                        raw: None,
+                    }),
+                    threshold_metric: None,
+                },
             }),
             indicator_ref: None,
             composite_weight: None,
@@ -326,7 +376,7 @@ mod happy_path_tests {
 
         let sli_map = default_sli_map();
         let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
-
+        println!("{:?}", result);
         assert!(result.is_ok());
     }
 
@@ -355,7 +405,10 @@ mod happy_path_tests {
 
 mod unhappy_path_tests {
     use super::*;
-    use crate::parser::sli::{MetricSource, RatioMetric, ThresholdMetric};
+    use crate::parser::{
+        document::Metadata,
+        sli::{MetricSource, RatioMetric, ThresholdMetric},
+    };
 
     fn default_sli_map() -> HashMap<String, SLISpec> {
         let mut sli_map = HashMap::new();
@@ -589,16 +642,25 @@ mod unhappy_path_tests {
             target_percent: Some(90.0),
             time_slice_target: None,
             time_slice_window: None,
-            indicator: Some(SLISpec {
-                description: None,
-                ratio_metric: None,
-                threshold_metric: Some(ThresholdMetric {
-                    metric_source: MetricSource {
-                        metric_source_ref: Some("some_errors".to_string()),
-                        type_: Some("datadoge".to_string()),
-                        spec: None,
-                    },
-                }),
+            indicator: Some(SLIDoc {
+                kind: None,
+                metadata: Metadata {
+                    name: "Test SLI".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
+                spec: SLISpec {
+                    description: None,
+                    ratio_metric: None,
+                    threshold_metric: Some(ThresholdMetric {
+                        metric_source: MetricSource {
+                            metric_source_ref: Some("some_errors".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        },
+                    }),
+                },
             }),
             indicator_ref: Some("threshold_metric".to_string()),
             composite_weight: None,
@@ -659,6 +721,49 @@ mod unhappy_path_tests {
         assert!(result.is_err_and(|e| {
             e.path == "test_path.compositeWeight"
                 && e.message == "Composite weight must not be specified for single objectives."
+        }));
+    }
+
+    #[test]
+    fn test_valid_composite_objective_threshold_matric() {
+        let objective = Objective {
+            display_name: Some("Test Objective".to_string()),
+            op: Some(Operator::Lte),
+            value: Some(0.95),
+            target: None,
+            target_percent: Some(90.0),
+            time_slice_target: None,
+            time_slice_window: None,
+            indicator: Some(SLIDoc {
+                kind: None,
+                metadata: Metadata {
+                    name: "Test SLI".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
+                spec: SLISpec {
+                    description: None,
+                    ratio_metric: None,
+                    threshold_metric: Some(ThresholdMetric {
+                        metric_source: MetricSource {
+                            metric_source_ref: Some("some_errors".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        },
+                    }),
+                },
+            }),
+            indicator_ref: None,
+            composite_weight: None,
+        };
+
+        let sli_map = default_sli_map();
+        let result = objective.validate(&BudgetingMethod::Occurrences, &sli_map, true, "test_path");
+        println!("{:?}", result);
+        assert!(result.is_err_and(|e| {
+            e.path == "test_path.indicator"
+                && e.message == "Can't use thresholdMetric in composite objectives."
         }));
     }
 }
