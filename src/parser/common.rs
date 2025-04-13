@@ -41,7 +41,7 @@ impl DurationShorthand {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub enum BudgetingMethod {
     #[serde(rename = "Occurrences")]
     Occurrences,
@@ -49,4 +49,6 @@ pub enum BudgetingMethod {
     Timeslices,
     #[serde(rename = "RatioTimeslices")]
     RatioTimeslices,
+    #[serde(other)]
+    Unknown,
 }

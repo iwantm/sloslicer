@@ -6,9 +6,9 @@ use serde::Deserialize;
 use super::alert_policy::AlertPolicySpec;
 use super::data_source::DataSourceSpec;
 use super::sli::SLISpec;
+use super::slo::SLOSpec;
 use crate::parser::alert_condition::AlertConditionSpec;
 use crate::parser::alert_notification_target::AlertNotificationTargetSpec;
-// use crate::parser::alert_policy::AlertPolicySpec;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub enum Kind {
@@ -31,8 +31,8 @@ pub enum Kind {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", content = "spec")]
 pub enum Spec {
-    DataSource(DataSourceSpec),
-    // SLO(SLOSpec),
+    // DataSource(DataSourceSpec),
+    SLO(SLOSpec),
     SLI(SLISpec),
     AlertPolicy(AlertPolicySpec),
     AlertCondition(AlertConditionSpec),
