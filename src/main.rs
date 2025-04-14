@@ -1,5 +1,5 @@
 mod parser;
-use parser::document::{Document, parse_kind};
+use parser::document::Document;
 
 fn main() {
     let yaml = r#"

@@ -93,7 +93,3 @@ impl Document {
         Ok(())
     }
 }
-
-pub fn parse_kind(yaml: &str) -> ParserResult<Document> {
-    Ok(serde_yaml::from_str(yaml)?)
-}
