@@ -3,7 +3,6 @@ pub mod alert_notification_target;
 pub mod alert_policy;
 pub mod common;
 pub mod data_source;
-pub mod document;
 pub mod objective;
 pub mod service;
 pub mod sli;

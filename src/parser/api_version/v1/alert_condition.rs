@@ -1,17 +1,16 @@
-use super::common::{DurationShorthand, Operator};
-use super::document::{Kind, Metadata};
+use super::common::{DurationShorthand, Kind, Metadata, Operator};
 use serde::Deserialize;
 
 use crate::parser::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq)]
-pub struct AlertConditionDocument {
+pub struct AlertConditionDoc {
     pub kind: Kind,
     pub metadata: Metadata,
     pub spec: AlertConditionSpec,
 }
 
-impl AlertConditionDocument {
+impl AlertConditionDoc {
     pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
         let path = path.unwrap_or("AlertCondition");
 
@@ -166,7 +165,7 @@ mod happy_path_tests {
                 lookbackWindow: 5m
         "#;
 
-        let expected = AlertConditionDocument {
+        let expected = AlertConditionDoc {
             kind: Kind::AlertCondition,
             metadata: Metadata {
                 name: "test".to_string(),
@@ -187,7 +186,7 @@ mod happy_path_tests {
             },
         };
 
-        let alert_condition: AlertConditionDocument = serde_yaml::from_str(yaml).unwrap();
+        let alert_condition: AlertConditionDoc = serde_yaml::from_str(yaml).unwrap();
 
         let result = alert_condition.validate(Some("test"));
 
@@ -212,7 +211,7 @@ mod happy_path_tests {
                 alertAfter: 5m
         "#;
 
-        let expected = AlertConditionDocument {
+        let expected = AlertConditionDoc {
             kind: Kind::AlertCondition,
             metadata: Metadata {
                 name: "test".to_string(),
@@ -233,7 +232,7 @@ mod happy_path_tests {
             },
         };
 
-        let alert_condition: AlertConditionDocument = serde_yaml::from_str(yaml).unwrap();
+        let alert_condition: AlertConditionDoc = serde_yaml::from_str(yaml).unwrap();
 
         let result = alert_condition.validate(None);
         assert!(expected == alert_condition);
@@ -258,7 +257,7 @@ mod unhappy_path_tests {
                 lookbackWindow: 30m
         "#;
 
-        let alert_condition: Result<AlertConditionDocument, serde_yaml::Error> =
+        let alert_condition: Result<AlertConditionDoc, serde_yaml::Error> =
             serde_yaml::from_str(yaml);
 
         assert!(
@@ -280,7 +279,7 @@ mod unhappy_path_tests {
                 lookbackWindow: 30m
         "#;
 
-        let alert_condition: AlertConditionDocument = serde_yaml::from_str(yaml).unwrap();
+        let alert_condition: AlertConditionDoc = serde_yaml::from_str(yaml).unwrap();
 
         let validation_result = alert_condition.validate(None);
         assert!(validation_result.is_err_and(
@@ -305,7 +304,7 @@ mod unhappy_path_tests {
                 lookbackWindow: 30m
         "#;
 
-        let alert_condition: AlertConditionDocument = serde_yaml::from_str(yaml).unwrap();
+        let alert_condition: AlertConditionDoc = serde_yaml::from_str(yaml).unwrap();
 
         let validation_result = alert_condition.validate(None);
         print!("validation_result: {:?}", validation_result);

@@ -1,16 +1,16 @@
 use serde::Deserialize;
 
-use super::document::{Kind, Metadata};
+use super::common::{Kind, Metadata};
 use crate::parser::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq)]
-pub struct AlertNotificationTargetDocument {
+pub struct AlertNotificationTargetDoc {
     pub kind: Kind,
     pub metadata: Metadata,
     pub spec: AlertNotificationTargetSpec,
 }
 
-impl AlertNotificationTargetDocument {
+impl AlertNotificationTargetDoc {
     pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
         let path = path.unwrap_or("AlertNotificationTarget");
 
@@ -46,13 +46,13 @@ impl AlertNotificationTargetSpec {
 #[cfg(test)]
 
 mod happy_path_tests {
-    use super::super::document::StringOrVec;
+    use super::super::common::StringOrVec;
 
     use super::*;
 
     #[test]
     fn test_alert_notification_target_spec() {
-        let expected = AlertNotificationTargetDocument {
+        let expected = AlertNotificationTargetDoc {
             kind: Kind::AlertNotificationTarget,
             metadata: Metadata {
                 name: "test".to_string(),
@@ -80,7 +80,7 @@ mod happy_path_tests {
             target: slack
         "#;
 
-        let alert_condition: AlertNotificationTargetDocument = serde_yaml::from_str(yaml).unwrap();
+        let alert_condition: AlertNotificationTargetDoc = serde_yaml::from_str(yaml).unwrap();
 
         let result = alert_condition.validate(None);
 
@@ -90,7 +90,7 @@ mod happy_path_tests {
 
     #[test]
     fn test_alert_notification_target_spec_full() {
-        let expected = AlertNotificationTargetDocument {
+        let expected = AlertNotificationTargetDoc {
             kind: Kind::AlertNotificationTarget,
             metadata: Metadata {
                 name: "test".to_string(),
@@ -113,7 +113,7 @@ mod happy_path_tests {
             description: Slack channel
         "#;
 
-        let alert_condition: AlertNotificationTargetDocument = serde_yaml::from_str(yaml).unwrap();
+        let alert_condition: AlertNotificationTargetDoc = serde_yaml::from_str(yaml).unwrap();
 
         let result = alert_condition.validate(None);
 

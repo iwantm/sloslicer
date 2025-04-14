@@ -1,12 +1,10 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-use super::alert_condition::AlertConditionDocument;
-use super::alert_notification_target::AlertNotificationTargetDocument;
+use super::alert_condition::AlertConditionDoc;
+use super::alert_notification_target::AlertNotificationTargetDoc;
 use super::alert_policy::AlertPolicyDoc;
-use super::common::{BudgetingMethod, DurationShorthand};
-use super::document::Kind;
-use super::document::Metadata;
+use super::common::{BudgetingMethod, DurationShorthand, Kind, Metadata};
 use super::objective::Objective;
 use super::sli::SLIDoc;
 use crate::parser::errors::{ParserError, ParserResult};
@@ -37,8 +35,8 @@ impl SLODoc {
         path: Option<&str>,
         sli_map: Option<&HashMap<String, SLIDoc>>,
         alert_policy_map: Option<&HashMap<String, AlertPolicyDoc>>,
-        condition_map: Option<&HashMap<String, AlertConditionDocument>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDocument>>,
+        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
+        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
     ) -> ParserResult<()> {
         let path = path.unwrap_or("SLO");
 
@@ -201,8 +199,8 @@ impl SLOSpec {
     fn validate_alert_policy(
         &self,
         alert_policy_map: Option<&HashMap<String, AlertPolicyDoc>>,
-        condition_map: Option<&HashMap<String, AlertConditionDocument>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDocument>>,
+        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
+        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
         path: &str,
     ) -> ParserResult<()> {
         if let Some(alert_policy) = &self.alert_policies {
@@ -241,8 +239,8 @@ impl SLOSpec {
         &self,
         sli_map: Option<&HashMap<String, SLIDoc>>,
         alert_policy_map: Option<&HashMap<String, AlertPolicyDoc>>,
-        condition_map: Option<&HashMap<String, AlertConditionDocument>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDocument>>,
+        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
+        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
         path: &str,
     ) -> ParserResult<()> {
         let is_composite = self.is_composite();
@@ -566,7 +564,7 @@ mod happy_path_tests {
                     alert_when_no_data: false,
                     alert_when_resolved: false,
                     alert_when_breaching: false,
-                    conditions: vec![AlertCondition::Inline(AlertConditionDocument {
+                    conditions: vec![AlertCondition::Inline(AlertConditionDoc {
                         kind: Kind::AlertCondition,
                         metadata: Metadata {
                             name: "high-error-rate-alert".to_string(),
@@ -587,7 +585,7 @@ mod happy_path_tests {
                         },
                     })],
                     notification_targets: vec![NotificationTarget::Inline(
-                        AlertNotificationTargetDocument {
+                        AlertNotificationTargetDoc {
                             kind: Kind::AlertNotificationTarget,
                             metadata: Metadata {
                                 name: "notification-target".to_string(),

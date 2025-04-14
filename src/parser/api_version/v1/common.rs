@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use regex::Regex;
 use serde::{Deserialize, Deserializer};
 
@@ -51,4 +53,38 @@ pub enum BudgetingMethod {
     RatioTimeslices,
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub enum Kind {
+    #[serde(rename = "DataSource")]
+    DataSource,
+    #[serde(rename = "SLO")]
+    SLO,
+    #[serde(rename = "SLI")]
+    SLI,
+    #[serde(rename = "AlertPolicy")]
+    AlertPolicy,
+    #[serde(rename = "AlertCondition")]
+    AlertCondition,
+    #[serde(rename = "AlertNotificationTarget")]
+    AlertNotificationTarget,
+    #[serde(rename = "Service")]
+    Service,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Metadata {
+    pub name: String,
+    #[serde(rename = "displayName")]
+    pub display_name: Option<String>,
+    pub labels: Option<HashMap<String, StringOrVec>>,
+    pub annotations: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum StringOrVec {
+    Single(String),
+    Multiple(Vec<String>),
 }

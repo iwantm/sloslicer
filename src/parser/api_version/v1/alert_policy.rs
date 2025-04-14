@@ -1,7 +1,7 @@
-use super::alert_condition::AlertConditionDocument;
-use super::alert_notification_target::AlertNotificationTargetDocument;
+use super::alert_condition::AlertConditionDoc;
+use super::alert_notification_target::AlertNotificationTargetDoc;
 
-use super::document::{Kind, Metadata};
+use super::common::{Kind, Metadata};
 use crate::parser::errors::{ParserError, ParserResult};
 use serde::Deserialize;
 
@@ -17,8 +17,8 @@ pub struct AlertPolicyDoc {
 impl AlertPolicyDoc {
     pub fn validate(
         &self,
-        condition_map: Option<&HashMap<String, AlertConditionDocument>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDocument>>,
+        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
+        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
         path: Option<&str>,
     ) -> ParserResult<()> {
         let path = path.unwrap_or("AlertPolicy");
@@ -41,7 +41,7 @@ impl AlertPolicyDoc {
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum AlertCondition {
-    Inline(AlertConditionDocument),
+    Inline(AlertConditionDoc),
     Reference(AlertConditionRef),
 }
 
@@ -54,7 +54,7 @@ pub struct AlertConditionRef {
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum NotificationTarget {
-    Inline(AlertNotificationTargetDocument),
+    Inline(AlertNotificationTargetDoc),
     Reference(NotificationTargetRef),
 }
 
@@ -81,8 +81,8 @@ pub struct AlertPolicySpec {
 impl AlertPolicySpec {
     pub fn validate(
         &self,
-        condition_map: Option<&HashMap<String, AlertConditionDocument>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDocument>>,
+        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
+        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
         path: &str,
     ) -> ParserResult<()> {
         //currently condition only accepts a single value
@@ -154,8 +154,8 @@ mod happy_path_tests {
     use super::super::alert_notification_target::AlertNotificationTargetSpec;
     use super::super::common::{DurationShorthand, Operator};
 
-    fn create_condition() -> AlertConditionDocument {
-        AlertConditionDocument {
+    fn create_condition() -> AlertConditionDoc {
+        AlertConditionDoc {
             spec: AlertConditionSpec {
                 condition: Condition {
                     kind: CondtionKind::Burnrate,
@@ -176,8 +176,8 @@ mod happy_path_tests {
             },
         }
     }
-    fn create_target() -> AlertNotificationTargetDocument {
-        AlertNotificationTargetDocument {
+    fn create_target() -> AlertNotificationTargetDoc {
+        AlertNotificationTargetDoc {
             spec: AlertNotificationTargetSpec {
                 target: "slack".to_string(),
                 description: Some("Slack channel".to_string()),
@@ -310,8 +310,8 @@ mod unhappy_path_tests {
 
     use super::*;
 
-    fn create_condition() -> AlertConditionDocument {
-        AlertConditionDocument {
+    fn create_condition() -> AlertConditionDoc {
+        AlertConditionDoc {
             spec: AlertConditionSpec {
                 condition: Condition {
                     kind: CondtionKind::Burnrate,
@@ -332,8 +332,8 @@ mod unhappy_path_tests {
             },
         }
     }
-    fn create_target() -> AlertNotificationTargetDocument {
-        AlertNotificationTargetDocument {
+    fn create_target() -> AlertNotificationTargetDoc {
+        AlertNotificationTargetDoc {
             spec: AlertNotificationTargetSpec {
                 target: "slack".to_string(),
                 description: Some("Slack channel".to_string()),

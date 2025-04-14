@@ -256,7 +256,7 @@ impl Objective {
 
 mod happy_path_tests {
     use super::super::{
-        document::{Kind, Metadata},
+        common::{Kind, Metadata},
         sli::{MetricSource, RatioMetric, ThresholdMetric},
     };
 
@@ -440,7 +440,7 @@ mod happy_path_tests {
 
 mod unhappy_path_tests {
     use super::super::{
-        document::{Kind, Metadata},
+        common::{Kind, Metadata},
         sli::{MetricSource, RatioMetric, ThresholdMetric},
     };
     use super::*;

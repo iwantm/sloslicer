@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::document::{Kind, Metadata};
+use super::common::{Kind, Metadata};
 use crate::parser::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq)]
