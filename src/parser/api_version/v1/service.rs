@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use super::document::Metadata;
-use crate::parser::validation::{ValidationError, ValidationResult};
+use crate::parser::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct ServiceDoc {
@@ -16,12 +16,12 @@ pub struct ServiceSpec {
 }
 
 impl ServiceDoc {
-    pub fn validate(&self, path: &str) -> ValidationResult {
+    pub fn validate(&self, path: &str) -> ParserResult<()> {
         if self.kind != "Service" {
-            return Err(ValidationError::new(
-                format!("{path}.kind"),
-                "Invalid kind specified. Expected `Service`.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "Expected kind to be Service.".to_string(),
+            });
         }
 
         Ok(())

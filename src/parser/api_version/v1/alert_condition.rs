@@ -1,7 +1,8 @@
-use super::super::super::validation::{ValidationError, ValidationResult};
 use super::common::{DurationShorthand, Operator};
 use super::document::{Kind, Metadata};
 use serde::Deserialize;
+
+use crate::parser::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct AlertConditionDocument {
@@ -11,18 +12,17 @@ pub struct AlertConditionDocument {
 }
 
 impl AlertConditionDocument {
-    pub fn validate(&self, path: Option<String>) -> ValidationResult {
+    pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
+        let path = path.unwrap_or("AlertCondition");
+
         if !matches!(self.kind, Kind::AlertCondition) {
-            return Err(ValidationError::new(
-                "kind",
-                "Invalid kind specified. Expected `AlertCondition`.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "Expected kind to be AlertCondition.".to_string(),
+            });
         }
 
-        match path {
-            Some(path) => self.spec.validate(&path),
-            None => self.spec.validate("alert_condition"),
-        }
+        self.spec.validate(&format!("{path}.spec"))
     }
 }
 
@@ -46,49 +46,49 @@ pub struct Condition {
 }
 
 impl Condition {
-    pub fn validate(&self, path: &str) -> ValidationResult {
+    pub fn validate(&self, path: &str) -> ParserResult<()> {
         let path = format!("{path}.condition");
 
         if matches!(self.op, Some(Operator::Invalid)) {
-            return Err(ValidationError::new(
-                format!("{path}.op"),
-                "Invalid operator specified.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.op"),
+                message: "Invalid operator specified.".to_string(),
+            });
         }
 
         if matches!(self.kind, CondtionKind::Burnrate) {
             if self.op.is_none() {
-                return Err(ValidationError::new(
-                    format!("{path}.op"),
-                    "Operator must be specified for burnrate condition.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.op"),
+                    message: "Operator must be specified for burnrate condition.".to_string(),
+                });
             }
 
             if self.threshold.is_none() {
-                return Err(ValidationError::new(
-                    format!("{path}.threshold"),
-                    "Threshold must be specified for burnrate condition.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.threshold"),
+                    message: "Threshold must be specified for burnrate condition.".to_string(),
+                });
             }
             if self.lookback_window.is_none() {
-                return Err(ValidationError::new(
-                    format!("{path}.lookback_window"),
-                    "Lookback window must be specified for burnrate condition.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.lookbackWindow"),
+                    message: "lookbackWindow must be specified for burnrate condition.".to_string(),
+                });
             }
             if self.alert_after.is_none() {
-                return Err(ValidationError::new(
-                    format!("{path}.alert_after"),
-                    "Alert after must be specified for burnrate condition.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.alertAfter"),
+                    message: "alertAfter must be specified for burnrate condition.".to_string(),
+                });
             }
 
             Ok(())
         } else {
-            Err(ValidationError::new(
-                format!("{path}.kind"),
-                "Unsupported condition kind.",
-            ))
+            Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "Unsupported condition kind.".to_string(),
+            })
         }
     }
 }
@@ -134,12 +134,12 @@ pub struct AlertConditionSpec {
 }
 
 impl AlertConditionSpec {
-    pub fn validate(&self, path: &str) -> ValidationResult {
+    pub fn validate(&self, path: &str) -> ParserResult<()> {
         if self.severity.trim().is_empty() {
-            return Err(ValidationError::new(
-                format!("{path}.severity"),
-                "Severity must be a non-empty string.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.severity"),
+                message: "Severity must be a non-empty string.".to_string(),
+            });
         }
 
         self.condition.validate(path)
@@ -189,7 +189,7 @@ mod happy_path_tests {
 
         let alert_condition: AlertConditionDocument = serde_yaml::from_str(yaml).unwrap();
 
-        let result = alert_condition.validate(Some("test".to_string()));
+        let result = alert_condition.validate(Some("test"));
 
         assert!(expected == alert_condition);
         assert!(result.is_ok());
@@ -283,10 +283,11 @@ mod unhappy_path_tests {
         let alert_condition: AlertConditionDocument = serde_yaml::from_str(yaml).unwrap();
 
         let validation_result = alert_condition.validate(None);
-        assert!(validation_result.is_err_and(|e| {
-            e.path == "alert_condition.condition.op"
-                && e.message == "Operator must be specified for burnrate condition."
-        }));
+        assert!(validation_result.is_err_and(
+            |e| matches!(e, ParserError::Validation { path, message }
+            if path == "AlertCondition.spec.condition.op"
+                && message == "Operator must be specified for burnrate condition.")
+        ));
     }
 
     #[test]
@@ -307,9 +308,11 @@ mod unhappy_path_tests {
         let alert_condition: AlertConditionDocument = serde_yaml::from_str(yaml).unwrap();
 
         let validation_result = alert_condition.validate(None);
+        print!("validation_result: {:?}", validation_result);
 
-        assert!(validation_result.is_err_and(|e| {
-            e.path == "alert_condition.condition.op" && e.message == "Invalid operator specified."
-        }));
+        assert!(
+            validation_result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+            if path == "AlertCondition.spec.condition.op" && message == "Invalid operator specified."))
+        );
     }
 }

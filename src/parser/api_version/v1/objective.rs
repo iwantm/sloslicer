@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 
-use super::super::super::validation::{ValidationError, ValidationResult};
 use super::common::{BudgetingMethod, DurationShorthand, Operator};
 use super::sli::{SLIDoc, SLISpec};
+use crate::parser::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -50,36 +50,36 @@ pub struct Objective {
 }
 
 impl Objective {
-    fn validate_target(&self, path: &str) -> ValidationResult {
+    fn validate_target(&self, path: &str) -> ParserResult<()> {
         if self.target.is_some() && self.target_percent.is_some() {
-            return Err(ValidationError::new(
-                format!("{path}.target"),
-                "Cannot specify both target and targetPercent.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.target, {path}.targetPercent"),
+                message: "Cannot specify both target and targetPercent.".to_string(),
+            });
         }
 
         if self.target.is_none() && self.target_percent.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.target"),
-                "Must specify either target or targetPercent.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.target, {path}.targetPercent"),
+                message: "Must specify either target or targetPercent.".to_string(),
+            });
         }
 
         if let Some(target_percent) = self.target_percent {
             if target_percent <= 0.0 || target_percent >= 100.0 {
-                return Err(ValidationError::new(
-                    format!("{path}.targetPercent"),
-                    "Target percent must be between 0 and 100.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.targetPercent"),
+                    message: "Target percent must be between 0 and 100.".to_string(),
+                });
             }
         }
 
         if let Some(target) = self.target {
             if target <= 0.0 || target >= 1.0 {
-                return Err(ValidationError::new(
-                    format!("{path}.target"),
-                    "Target must be between 0 and 1.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.target"),
+                    message: "Target must be between 0 and 1.".to_string(),
+                });
             }
         }
         Ok(())
@@ -89,51 +89,52 @@ impl Objective {
         &self,
         budgeting_method: &BudgetingMethod,
         path: &str,
-    ) -> ValidationResult {
+    ) -> ParserResult<()> {
         if matches!(
             budgeting_method,
             BudgetingMethod::Timeslices | BudgetingMethod::RatioTimeslices
         ) {
             if self.time_slice_target.is_none() || self.time_slice_window.is_none() {
-                return Err(ValidationError::new(
-                    format!("{path}.timeSliceTarget"),
-                    "TimeSlices budgeting requires timeSliceTarget and timeSliceWindow.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.timeSliceTarget, {path}.timeSliceWindow"),
+                    message: "TimeSlices budgeting requires timeSliceTarget and timeSliceWindow."
+                        .to_string(),
+                });
             }
 
             if let Some(tst) = self.time_slice_target {
                 if tst <= 0.0 || tst > 1.0 {
-                    return Err(ValidationError::new(
-                        format!("{path}.timeSliceTarget"),
-                        "TimeSlice target must be between 0 and 1.",
-                    ));
+                    return Err(ParserError::Validation {
+                        path: format!("{path}.timeSliceTarget"),
+                        message: "TimeSlice target must be between 0 and 1.".to_string(),
+                    });
                 }
             }
         }
         Ok(())
     }
 
-    fn validate_operators(&self, path: &str) -> ValidationResult {
+    fn validate_operators(&self, path: &str) -> ParserResult<()> {
         if self.op.is_some() && self.value.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.value"),
-                "Value must be specified when using an operator.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.value"),
+                message: "Value must be specified when using an operator.".to_string(),
+            });
         }
 
         if self.value.is_some() && self.op.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.op"),
-                "Operator must be specified when using a value.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.op"),
+                message: "Operator must be specified when using a value.".to_string(),
+            });
         }
 
         if let Some(op) = &self.op {
             if matches!(op, Operator::Invalid) {
-                return Err(ValidationError::new(
-                    format!("{path}.op"),
-                    "Invalid operator specified.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.op"),
+                    message: "Invalid operator specified.".to_string(),
+                });
             }
         }
 
@@ -145,75 +146,83 @@ impl Objective {
         sli_map: Option<&HashMap<String, SLIDoc>>,
         is_composite: bool,
         path: &str,
-    ) -> ValidationResult {
+    ) -> ParserResult<()> {
         if self.indicator.is_some() && self.indicator_ref.is_some() {
-            return Err(ValidationError::new(
-                format!("{path}.indicator"),
-                "Cannot specify both indicator and indicatorRef.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.indicator, {path}.indicatorRef"),
+                message: "Cannot specify both indicator and indicatorRef.".to_string(),
+            });
         }
 
         if is_composite {
             if self.indicator.is_none() && self.indicator_ref.is_none() {
-                return Err(ValidationError::new(
-                    format!("{path}.indicator"),
-                    "Indicator or indicatorRef must be specified for composite objectives.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.indicator, {path}.indicatorRef"),
+                    message:
+                        "Indicator or indicatorRef must be specified for composite objectives."
+                            .to_string(),
+                });
             }
 
             if let Some(indicator) = &self.indicator {
                 if indicator.spec.is_threshold_metric() {
-                    return Err(ValidationError::new(
-                        format!("{path}.indicator"),
-                        "Can't use thresholdMetric in composite objectives.",
-                    ));
+                    return Err(ParserError::Validation {
+                        path: format!("{path}.indicator"),
+                        message: "Can't use thresholdMetric in composite objectives.".to_string(),
+                    });
                 }
 
-                indicator.validate(true, Some(format!("{path}.indicator")))?;
+                indicator.validate(true, Some(&format!("{path}.indicator")))?;
             }
 
             if let Some(indicator_ref) = &self.indicator_ref {
                 if let Some(sli_map) = sli_map {
-                    let indicator = sli_map.get(indicator_ref).ok_or_else(|| {
-                        ValidationError::new(
-                            format!("{path}.indicatorRef"),
-                            format!("Indicator reference `{}` not found.", indicator_ref),
-                        )
-                    })?;
+                    let indicator =
+                        sli_map
+                            .get(indicator_ref)
+                            .ok_or_else(|| ParserError::Validation {
+                                path: format!("{path}.indicatorRef"),
+                                message: format!(
+                                    "Indicator reference `{}` not found.",
+                                    indicator_ref
+                                ),
+                            })?;
 
                     if indicator.spec.is_threshold_metric()
                         && (self.op.is_none() || self.value.is_none())
                     {
-                        return Err(ValidationError::new(
-                            format!("{path}.indicator"),
-                            "op and value must be specified when using a thresholdMetric.",
-                        ));
+                        return Err(ParserError::Validation {
+                            path: format!("{path}.indicator"),
+                            message: "op and value must be specified when using a thresholdMetric."
+                                .to_string(),
+                        });
                     }
                 }
             }
 
             if let Some(composite_weight) = self.composite_weight {
                 if composite_weight < 0.0 {
-                    return Err(ValidationError::new(
-                        format!("{path}.compositeWeight"),
-                        "Composite weight must be greater than or equal to 0.",
-                    ));
+                    return Err(ParserError::Validation {
+                        path: format!("{path}.compositeWeight"),
+                        message: "Composite weight must be greater than or equal to 0.".to_string(),
+                    });
                 }
             };
         }
 
         if !is_composite {
             if self.indicator.is_some() || self.indicator_ref.is_some() {
-                return Err(ValidationError::new(
-                    format!("{path}.indicator"),
-                    "Indicator or indicatorRef must not be specified for non-composite objectives.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.indicator"),
+                    message: "Indicator or indicatorRef must not be specified for non-composite objectives.".to_string(),
+                });
             }
             if self.composite_weight.is_some() {
-                return Err(ValidationError::new(
-                    format!("{path}.compositeWeight"),
-                    "Composite weight must not be specified for single objectives.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.compositeWeight"),
+                    message: "Composite weight must not be specified for single objectives."
+                        .to_string(),
+                });
             }
         }
 
@@ -226,7 +235,7 @@ impl Objective {
         sli_map: Option<&HashMap<String, SLIDoc>>,
         is_composite: bool,
         path: &str,
-    ) -> ValidationResult {
+    ) -> ParserResult<()> {
         self.validate_target(path)?;
         self.validate_timeslice(budgeting_method, path)?;
         self.validate_operators(path)?;
@@ -515,10 +524,12 @@ mod unhappy_path_tests {
 
         let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.target"
-                && e.message == "Cannot specify both target and targetPercent."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "test_path.target, test_path.targetPercent"
+                    && message == "Cannot specify both target and targetPercent."
+            ))
+        );
     }
 
     #[test]
@@ -538,10 +549,11 @@ mod unhappy_path_tests {
 
         let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.target"
-                && e.message == "Must specify either target or targetPercent."
-        }));
+        assert!(result.is_err_and(
+            |e| matches!(e, ParserError::Validation {path, message} if path == "test_path.target, test_path.targetPercent"
+                    && message == "Must specify either target or targetPercent."
+            )
+        ));
     }
 
     #[test]
@@ -562,10 +574,10 @@ mod unhappy_path_tests {
         let result =
             objective.validate(&BudgetingMethod::RatioTimeslices, None, false, "test_path");
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.timeSliceTarget"
-                && e.message == "TimeSlices budgeting requires timeSliceTarget and timeSliceWindow."
-        }));
+        assert!(result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+            if path == "test_path.timeSliceTarget, test_path.timeSliceWindow" 
+                && message == "TimeSlices budgeting requires timeSliceTarget and timeSliceWindow."
+        )));
     }
 
     #[test]
@@ -585,10 +597,12 @@ mod unhappy_path_tests {
 
         let result = objective.validate(&BudgetingMethod::Timeslices, None, false, "test_path");
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.timeSliceTarget"
-                && e.message == "TimeSlice target must be between 0 and 1."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+                path == "test_path.timeSliceTarget"
+                    && message == "TimeSlice target must be between 0 and 1."
+            ))
+        );
     }
 
     #[test]
@@ -608,10 +622,12 @@ mod unhappy_path_tests {
 
         let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.value"
-                && e.message == "Value must be specified when using an operator."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+                path == "test_path.value"
+                    && message == "Value must be specified when using an operator."
+            ))
+        );
     }
 
     #[test]
@@ -631,10 +647,12 @@ mod unhappy_path_tests {
 
         let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.op"
-                && e.message == "Operator must be specified when using a value."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+                path == "test_path.op"
+                    && message == "Operator must be specified when using a value."
+            ))
+        );
     }
 
     #[test]
@@ -654,11 +672,13 @@ mod unhappy_path_tests {
 
         let result = objective.validate(&BudgetingMethod::Occurrences, None, true, "test_path");
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.indicator"
-                && e.message
-                    == "Indicator or indicatorRef must be specified for composite objectives."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "test_path.indicator, test_path.indicatorRef"
+                    && message
+                        == "Indicator or indicatorRef must be specified for composite objectives."
+            ))
+        );
     }
 
     #[test]
@@ -703,10 +723,12 @@ mod unhappy_path_tests {
             "test_path",
         );
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.indicator"
-                && e.message == "Cannot specify both indicator and indicatorRef."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "test_path.indicator, test_path.indicatorRef"
+                    && message == "Cannot specify both indicator and indicatorRef."
+            ))
+        );
     }
 
     #[test]
@@ -732,10 +754,12 @@ mod unhappy_path_tests {
             "test_path",
         );
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.compositeWeight"
-                && e.message == "Composite weight must be greater than or equal to 0."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "test_path.compositeWeight"
+                    && message == "Composite weight must be greater than or equal to 0."
+            ))
+        );
     }
 
     #[test]
@@ -755,10 +779,12 @@ mod unhappy_path_tests {
 
         let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.compositeWeight"
-                && e.message == "Composite weight must not be specified for single objectives."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "test_path.compositeWeight"
+                    && message == "Composite weight must not be specified for single objectives."
+            ))
+        );
     }
 
     #[test]
@@ -797,9 +823,11 @@ mod unhappy_path_tests {
 
         let result = objective.validate(&BudgetingMethod::Occurrences, None, true, "test_path");
 
-        assert!(result.is_err_and(|e| {
-            e.path == "test_path.indicator"
-                && e.message == "Can't use thresholdMetric in composite objectives."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "test_path.indicator"
+                    && message == "Can't use thresholdMetric in composite objectives."
+            ))
+        );
     }
 }

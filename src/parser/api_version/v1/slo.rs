@@ -1,7 +1,6 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-use super::super::super::validation::{ValidationError, ValidationResult};
 use super::alert_condition::AlertConditionDocument;
 use super::alert_notification_target::AlertNotificationTargetDocument;
 use super::alert_policy::AlertPolicyDoc;
@@ -10,6 +9,7 @@ use super::document::Kind;
 use super::document::Metadata;
 use super::objective::Objective;
 use super::sli::SLIDoc;
+use crate::parser::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct AlertPolicyRef {
@@ -34,17 +34,20 @@ pub struct SLODoc {
 impl SLODoc {
     pub fn validate(
         &self,
+        path: Option<&str>,
         sli_map: Option<&HashMap<String, SLIDoc>>,
         alert_policy_map: Option<&HashMap<String, AlertPolicyDoc>>,
         condition_map: Option<&HashMap<String, AlertConditionDocument>>,
         notification_target_map: Option<&HashMap<String, AlertNotificationTargetDocument>>,
-    ) -> ValidationResult {
+    ) -> ParserResult<()> {
+        let path = path.unwrap_or("SLO");
+
         self.spec.validate(
             sli_map,
             alert_policy_map,
             condition_map,
             notification_target_map,
-            "SLO",
+            &format!("{path}.spec"),
         )
     }
 }
@@ -70,23 +73,23 @@ impl SLOSpec {
         self.objectives.len() > 1
     }
 
-    fn validate_service(&self, path: &str) -> ValidationResult {
+    fn validate_service(&self, path: &str) -> ParserResult<()> {
         if self.service.trim().is_empty() {
-            return Err(ValidationError::new(
-                format!("{path}.service"),
-                "Service must be a non-empty string.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.service"),
+                message: "Service must be a non-empty string.".to_string(),
+            });
         }
 
         Ok(())
     }
 
-    fn validate_budgeting_method(&self, path: &str) -> ValidationResult {
+    fn validate_budgeting_method(&self, path: &str) -> ParserResult<()> {
         if self.budgeting_method == BudgetingMethod::Unknown {
-            return Err(ValidationError::new(
-                format!("{path}.budgetingMethod"),
-                "Invalid budgeting method.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.budgetingMethod"),
+                message: "Invalid budgeting method.".to_string(),
+            });
         }
 
         Ok(())
@@ -97,46 +100,50 @@ impl SLOSpec {
         is_composite: bool,
         sli_map: Option<&HashMap<String, SLIDoc>>,
         path: &str,
-    ) -> ValidationResult {
+    ) -> ParserResult<()> {
         if is_composite && (self.indicator.is_some() || self.indicator_ref.is_some()) {
-            return Err(ValidationError::new(
-                format!("{path}.indicator"),
-                "indicator is not allowed for composite SLOs.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.indicator"),
+                message: "indicator is not allowed for composite SLOs.".to_string(),
+            });
         }
         if !is_composite {
             match (&self.indicator, &self.indicator_ref) {
                 (Some(_), Some(_)) => {
-                    return Err(ValidationError::new(
-                        format!("{path}.indicator"),
-                        "Cannot define both indicator and indicatorRef.",
-                    ));
+                    return Err(ParserError::Validation {
+                        path: format!("{path}.indicator, {path}.indicatorRef"),
+                        message: "Cannot define both indicator and indicatorRef.".to_string(),
+                    });
                 }
                 (None, None) => {
-                    return Err(ValidationError::new(
-                        format!("{path}.indicator"),
-                        "Must define either indicator or indicatorRef.",
-                    ));
+                    return Err(ParserError::Validation {
+                        path: format!("{path}.indicator, {path}.indicatorRef"),
+                        message: "Must define either indicator or indicatorRef.".to_string(),
+                    });
                 }
                 (Some(indicator), None) => {
-                    return indicator.validate(true, Some(format!("{path}.indicator")));
+                    return indicator.validate(true, Some(&format!("{path}.indicator")));
                 }
                 (None, Some(indicator_ref)) => match sli_map {
                     Some(sli_map) => {
-                        let _ = sli_map.get(indicator_ref).ok_or_else(|| {
-                            ValidationError::new(
-                                format!("{path}.indicatorRef"),
-                                format!("Indicator reference `{}` not found.", indicator_ref),
-                            )
-                        })?;
+                        let _ =
+                            sli_map
+                                .get(indicator_ref)
+                                .ok_or_else(|| ParserError::Validation {
+                                    path: format!("{path}.indicatorRef"),
+                                    message: format!(
+                                        "Indicator reference `{}` not found.",
+                                        indicator_ref
+                                    ),
+                                })?;
 
                         return Ok(());
                     }
                     None => {
-                        return Err(ValidationError::new(
-                            format!("{path}.indicatorRef"),
-                            "SLI map is required for indicatorRef validation.",
-                        ));
+                        return Err(ParserError::Validation {
+                            path: format!("{path}.indicatorRef"),
+                            message: "SLI map is required for indicatorRef validation.".to_string(),
+                        });
                     }
                 },
             }
@@ -144,13 +151,13 @@ impl SLOSpec {
         Ok(())
     }
 
-    fn validate_time_window(&self, path: &str) -> ValidationResult {
+    fn validate_time_window(&self, path: &str) -> ParserResult<()> {
         if let Some(time_window) = &self.time_window {
             if time_window.len() != 1 {
-                return Err(ValidationError::new(
-                    format!("{path}.timeWindow"),
-                    "timeWindow must contain exactly one item.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.timeWindow"),
+                    message: "timeWindow must contain exactly one item.".to_string(),
+                });
             }
             return time_window[0].validate(&format!("{path}.timeWindow[0]"));
         }
@@ -163,13 +170,13 @@ impl SLOSpec {
         is_composite: bool,
         sli_map: Option<&HashMap<String, SLIDoc>>,
         path: &str,
-    ) -> ValidationResult {
+    ) -> ParserResult<()> {
         if !is_composite {
             if self.objectives.len() != 1 {
-                return Err(ValidationError::new(
-                    format!("{path}.objectives"),
-                    "objectives must contain exactly one item.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.objectives"),
+                    message: "objectives must contain exactly one item.".to_string(),
+                });
             }
             return self.objectives[0].validate(
                 &self.budgeting_method,
@@ -197,33 +204,31 @@ impl SLOSpec {
         condition_map: Option<&HashMap<String, AlertConditionDocument>>,
         notification_target_map: Option<&HashMap<String, AlertNotificationTargetDocument>>,
         path: &str,
-    ) -> ValidationResult {
+    ) -> ParserResult<()> {
         if let Some(alert_policy) = &self.alert_policies {
             for (i, policy) in alert_policy.iter().enumerate() {
                 match policy {
                     AlertPolicy::Inline(policy) => policy.validate(
                         condition_map,
                         notification_target_map,
-                        Some(format!("{path}.alertPolicy[{}]", i)),
+                        Some(&format!("{path}.alertPolicy[{}]", i)),
                     )?,
                     AlertPolicy::Reference(policy_ref) => {
                         if let Some(alert_policy_map) = alert_policy_map {
                             alert_policy_map
                                 .get(&policy_ref.alert_policy_ref)
-                                .ok_or_else(|| {
-                                    ValidationError::new(
-                                        format!("{path}.alertPolicy[{}]", i),
-                                        format!(
-                                            "Alert policy reference `{}` not found.",
-                                            policy_ref.alert_policy_ref
-                                        ),
-                                    )
+                                .ok_or_else(|| ParserError::Validation {
+                                    path: format!("{path}.alertPolicy[{}]", i),
+                                    message: format!(
+                                        "Alert policy reference `{}` not found.",
+                                        policy_ref.alert_policy_ref
+                                    ),
                                 })?;
                         } else {
-                            return Err(ValidationError::new(
-                                format!("{path}.alertPolicy[{}]", i),
-                                "Alert policy map is required for alert policy reference validation.",
-                            ));
+                            return Err(ParserError::Validation {
+                                path: format!("{path}.alertPolicy[{}]", i),
+                                message: "Alert policy map is required for alert policy reference validation.".to_string(),
+                            });
                         }
                     }
                 }
@@ -239,7 +244,7 @@ impl SLOSpec {
         condition_map: Option<&HashMap<String, AlertConditionDocument>>,
         notification_target_map: Option<&HashMap<String, AlertNotificationTargetDocument>>,
         path: &str,
-    ) -> ValidationResult {
+    ) -> ParserResult<()> {
         let is_composite = self.is_composite();
         self.validate_service(path)?;
         self.validate_budgeting_method(path)?;
@@ -264,19 +269,22 @@ pub struct TimeWindow {
 }
 
 impl TimeWindow {
-    pub fn validate(&self, path: &str) -> ValidationResult {
+    pub fn validate(&self, path: &str) -> ParserResult<()> {
         if self.is_rolling && self.calendar.is_some() {
-            return Err(ValidationError::new(
-                format!("{path}.calendar"),
-                "Calendar details can only be specified for Calendar Aligned time windows.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.calendar"),
+                message:
+                    "Calendar details can only be specified for Calendar Aligned time windows."
+                        .to_string(),
+            });
         }
 
         if !self.is_rolling && self.calendar.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.calendar"),
-                "Calendar details must be specified for Calendar Aligned time windows.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.calendar"),
+                message: "Calendar details must be specified for Calendar Aligned time windows."
+                    .to_string(),
+            });
         }
 
         Ok(())
@@ -339,7 +347,7 @@ mod happy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, None, None, None);
+        let result = slo.validate(None, None, None, None, None);
 
         assert!(result.is_ok(), "Expected valid SLO to pass validation");
     }
@@ -395,7 +403,7 @@ mod happy_path_tests {
             },
         );
 
-        let result = slo.validate(Some(&sli_map), None, None, None);
+        let result = slo.validate(None, Some(&sli_map), None, None, None);
 
         assert!(result.is_ok(), "Expected valid SLO to pass validation");
     }
@@ -490,7 +498,7 @@ mod happy_path_tests {
             },
         );
 
-        let result = slo.validate(Some(&sli_map), None, None, None);
+        let result = slo.validate(None, Some(&sli_map), None, None, None);
 
         assert!(result.is_ok(), "Expected valid SLO to pass validation");
     }
@@ -597,7 +605,7 @@ mod happy_path_tests {
             },
         );
 
-        let result = slo.validate(Some(&sli_map), Some(&alert_policy_map), None, None);
+        let result = slo.validate(None, Some(&sli_map), Some(&alert_policy_map), None, None);
 
         assert!(result.is_ok(), "Expected valid SLO to pass validation");
     }
@@ -664,7 +672,7 @@ mod happy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, None, None, None);
+        let result = slo.validate(None, None, None, None, None);
 
         assert!(result.is_ok(), "Expected valid SLO to pass validation");
     }
@@ -691,12 +699,14 @@ mod unhappy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, None, None, None);
+        let result = slo.validate(None, None, None, None, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "SLO.indicator"
-                && e.message == "Must define either indicator or indicatorRef."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+                path == "SLO.spec.indicator, SLO.spec.indicatorRef"
+                    && message == "Must define either indicator or indicatorRef."
+            ))
+        );
     }
 
     #[test]
@@ -733,12 +743,14 @@ mod unhappy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, None, None, None);
+        let result = slo.validate(None, None, None, None, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "SLO.indicator"
-                && e.message == "Cannot define both indicator and indicatorRef."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+                path == "SLO.spec.indicator, SLO.spec.indicatorRef"
+                    && message == "Cannot define both indicator and indicatorRef."
+            ))
+        );
     }
 
     #[test]
@@ -776,12 +788,14 @@ mod unhappy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, Some(&HashMap::new()), None, None);
+        let result = slo.validate(None, None, Some(&HashMap::new()), None, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "SLO.alertPolicy[0]"
-                && e.message == "Alert policy reference `not-found` not found."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+                path == "SLO.spec.alertPolicy[0]"
+                    && message == "Alert policy reference `not-found` not found."
+            ))
+        );
     }
 
     #[test]
@@ -801,12 +815,14 @@ mod unhappy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(Some(&HashMap::new()), None, None, None);
+        let result = slo.validate(None, Some(&HashMap::new()), None, None, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "SLO.indicatorRef"
-                && e.message == "Indicator reference `not-found` not found."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "SLO.spec.indicatorRef"
+                    && message == "Indicator reference `not-found` not found."
+            ))
+        );
     }
 
     #[test]
@@ -852,10 +868,13 @@ mod unhappy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(Some(&HashMap::new()), None, None, None);
+        let result = slo.validate(None, Some(&HashMap::new()), None, None, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "SLO.indicator" && e.message == "indicator is not allowed for composite SLOs."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+                path == "SLO.spec.indicator"
+                    && message == "indicator is not allowed for composite SLOs."
+            ))
+        );
     }
 }

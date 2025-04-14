@@ -1,8 +1,8 @@
 use super::alert_condition::AlertConditionDocument;
 use super::alert_notification_target::AlertNotificationTargetDocument;
 
-use super::super::super::validation::{ValidationError, ValidationResult};
 use super::document::{Kind, Metadata};
+use crate::parser::errors::{ParserError, ParserResult};
 use serde::Deserialize;
 
 use std::collections::HashMap;
@@ -19,23 +19,22 @@ impl AlertPolicyDoc {
         &self,
         condition_map: Option<&HashMap<String, AlertConditionDocument>>,
         notification_target_map: Option<&HashMap<String, AlertNotificationTargetDocument>>,
-        path: Option<String>,
-    ) -> ValidationResult {
+        path: Option<&str>,
+    ) -> ParserResult<()> {
+        let path = path.unwrap_or("AlertPolicy");
+
         if !matches!(self.kind, Kind::AlertPolicy) {
-            return Err(ValidationError::new(
-                "kind",
-                "Invalid kind specified. Expected `AlertPolicy`.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "SLI must have a kind.".to_string(),
+            });
         }
 
-        match path {
-            Some(path) => self
-                .spec
-                .validate(condition_map, notification_target_map, &path),
-            None => self
-                .spec
-                .validate(condition_map, notification_target_map, "alert_policy"),
-        }
+        self.spec.validate(
+            condition_map,
+            notification_target_map,
+            &format!("{path}.spec"),
+        )
     }
 }
 
@@ -85,38 +84,38 @@ impl AlertPolicySpec {
         condition_map: Option<&HashMap<String, AlertConditionDocument>>,
         notification_target_map: Option<&HashMap<String, AlertNotificationTargetDocument>>,
         path: &str,
-    ) -> ValidationResult {
+    ) -> ParserResult<()> {
         //currently condition only accepts a single value
 
         if self.conditions.len() != 1 {
-            return Err(ValidationError::new(
-                format!("{path}.condition"),
-                "Condition must contain exactly one item.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.condition"),
+                message: "Condition must contain exactly one item.".to_string(),
+            });
         }
 
         match &self.conditions[0] {
             AlertCondition::Reference(reference) => {
                 let reference = &reference.condition_ref;
                 if let Some(condition_map) = condition_map {
-                    condition_map.get(reference).ok_or_else(|| {
-                        ValidationError::new(
-                            format!("{path}.conditions"),
-                            format!("Condition reference `{}` not found.", reference),
-                        )
-                    })?;
+                    condition_map
+                        .get(reference)
+                        .ok_or_else(|| ParserError::Validation {
+                            path: format!("{path}.conditions"),
+                            message: format!("Condition reference `{}` not found.", reference),
+                        })?;
                 }
             }
             AlertCondition::Inline(inline_condition) => {
-                inline_condition.validate(Some(path.to_string()))?;
+                inline_condition.validate(Some(path))?;
             }
         }
 
         if self.notification_targets.is_empty() {
-            return Err(ValidationError::new(
-                format!("{path}.notificationTargets"),
-                "Notification targets must not be empty.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.notificationTargets"),
+                message: "Notification targets must not be empty.".to_string(),
+            });
         }
 
         for (i, target) in self.notification_targets.iter().enumerate() {
@@ -125,10 +124,13 @@ impl AlertPolicySpec {
                     let reference = &reference.target_ref;
                     if let Some(notification_target_map) = notification_target_map {
                         notification_target_map.get(reference).ok_or_else(|| {
-                            ValidationError::new(
-                                format!("{path}.notificationTargets[{}].targetRef", i),
-                                format!("Notification target reference `{}` not found.", reference),
-                            )
+                            ParserError::Validation {
+                                path: format!("{path}.notificationTargets[{}].targetRef", i),
+                                message: format!(
+                                    "Notification target reference `{}` not found.",
+                                    reference
+                                ),
+                            }
                         })?;
                     }
                 }
@@ -386,10 +388,12 @@ mod unhappy_path_tests {
 
         let result = alert_policy.validate(None, None, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "alert_policy.condition"
-                && e.message == "Condition must contain exactly one item."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+                path == "AlertPolicy.spec.condition"
+                    && message == "Condition must contain exactly one item."
+            ))
+        );
     }
 
     #[test]
@@ -414,9 +418,11 @@ mod unhappy_path_tests {
 
         let result = alert_policy.validate(Some(&condition_map), None, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "alert_policy.notificationTargets"
-                && e.message == "Notification targets must not be empty."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "AlertPolicy.spec.notificationTargets"
+                    && message == "Notification targets must not be empty."
+            ))
+        );
     }
 }

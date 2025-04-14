@@ -1,8 +1,7 @@
-use super::{
-    super::super::validation::{ValidationError, ValidationResult},
-    document::{Kind, Metadata},
-};
 use serde::Deserialize;
+
+use super::document::{Kind, Metadata};
+use crate::parser::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct AlertNotificationTargetDocument {
@@ -12,18 +11,17 @@ pub struct AlertNotificationTargetDocument {
 }
 
 impl AlertNotificationTargetDocument {
-    pub fn validate(&self, path: Option<String>) -> ValidationResult {
-        if !matches!(self.kind, Kind::AlertNotificationTarget) {
-            return Err(ValidationError::new(
-                "kind",
-                "Invalid kind specified. Expected `AlertNotificationTarget`.",
-            ));
-        }
+    pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
+        let path = path.unwrap_or("AlertNotificationTarget");
 
-        match path {
-            Some(path) => self.spec.validate(&path),
-            None => self.spec.validate("alert_notification_target"),
-        }
+        if !matches!(self.kind, Kind::AlertNotificationTarget) {
+            return Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "Expected kind to be AlertNotificationTarget.".to_string(),
+            });
+        };
+
+        self.spec.validate(&format!("{path}.spec"))
     }
 }
 
@@ -34,12 +32,12 @@ pub struct AlertNotificationTargetSpec {
 }
 
 impl AlertNotificationTargetSpec {
-    pub fn validate(&self, path: &str) -> ValidationResult {
+    pub fn validate(&self, path: &str) -> ParserResult<()> {
         if self.target.is_empty() {
-            return Err(ValidationError::new(
-                format!("{path}.target"),
-                "Target must not be empty.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.target"),
+                message: "Target must not be empty.".to_string(),
+            });
         }
         Ok(())
     }

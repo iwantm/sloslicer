@@ -1,10 +1,7 @@
-
 use serde::Deserialize;
 
-use super::{
-    super::super::validation::{ValidationError, ValidationResult},
-    document::{Kind, Metadata},
-};
+use super::document::{Kind, Metadata};
+use crate::parser::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct SLIDoc {
@@ -14,22 +11,24 @@ pub struct SLIDoc {
 }
 
 impl SLIDoc {
-    pub fn validate(&self, is_inline: bool, path: Option<String>) -> ValidationResult {
+    pub fn validate(&self, is_inline: bool, path: Option<&str>) -> ParserResult<()> {
+        let path = path.unwrap_or("SLI");
+
         if is_inline {
             if self.kind.is_some() {
-                return Err(ValidationError::new(
-                    "kind",
-                    "Inline SLI must not have a kind.",
-                ));
+                return Err(ParserError::Validation {
+                    path: format!("{path}.kind"),
+                    message: "Inline SLI must not have a kind.".to_string(),
+                });
             }
         } else if !is_inline && self.kind.is_none() {
-            return Err(ValidationError::new("kind", "SLI must have a kind."));
+            return Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "SLI must have a kind.".to_string(),
+            });
         }
 
-        match path {
-            Some(p) => self.spec.validate(&p),
-            None => self.spec.validate("SLI.spec"),
-        }
+        self.spec.validate(&format!("{path}.spec"))
     }
 }
 
@@ -47,19 +46,19 @@ impl SLISpec {
         self.threshold_metric.is_some()
     }
 
-    pub fn validate(&self, path: &str) -> ValidationResult {
+    pub fn validate(&self, path: &str) -> ParserResult<()> {
         if self.threshold_metric.is_some() && self.ratio_metric.is_some() {
-            return Err(ValidationError::new(
-                format!("{path}.thresholdMetric"),
-                "Cannot specify both thresholdMetric and ratioMetric.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.thresholdMetric, {path}.ratioMetric"),
+                message: "Cannot specify both thresholdMetric and ratioMetric.".to_string(),
+            });
         }
 
         if self.threshold_metric.is_none() && self.ratio_metric.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.thresholdMetric"),
-                "Must specify either thresholdMetric or ratioMetric.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.thresholdMetric, {path}.ratioMetric"),
+                message: "Must specify either thresholdMetric or ratioMetric.".to_string(),
+            });
         }
 
         if let Some(threshold_metric) = &self.threshold_metric {
@@ -81,7 +80,7 @@ pub struct ThresholdMetric {
 }
 
 impl ThresholdMetric {
-    pub fn validate(&self, path: &str) -> ValidationResult {
+    pub fn validate(&self, path: &str) -> ParserResult<()> {
         self.metric_source
             .validate(&format!("{path}.metricSource"))?;
         Ok(())
@@ -100,41 +99,41 @@ pub struct RatioMetric {
 }
 
 impl RatioMetric {
-    pub fn validate(&self, path: &str) -> ValidationResult {
+    pub fn validate(&self, path: &str) -> ParserResult<()> {
         if self.raw.is_some() && (self.good.is_some() || self.bad.is_some() || self.total.is_some())
         {
-            return Err(ValidationError::new(
-                format!("{path}.raw"),
-                "Cannot specify raw with good, bad, or total.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.raw"),
+                message: "Cannot specify raw with good, bad, or total.".to_string(),
+            });
         }
 
         if self.good.is_some() && self.bad.is_some() {
-            return Err(ValidationError::new(
-                format!("{path}.good"),
-                "Cannot specify both good and bad.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.good, {path}.bad"),
+                message: "Cannot specify both good and bad.".to_string(),
+            });
         }
 
         if (self.good.is_some() || self.bad.is_some()) && self.total.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.good"),
-                "Must specify total when using good or bad.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.total"),
+                message: "Must specify total when using good or bad.".to_string(),
+            });
         }
 
         if self.total.is_some() && (self.good.is_none() && self.bad.is_none()) {
-            return Err(ValidationError::new(
-                format!("{path}.total"),
-                "Must specify good or bad when using total.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.total"),
+                message: "Must specify good or bad when using total.".to_string(),
+            });
         }
 
         if self.raw.is_some() && self.raw_type.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.rawType"),
-                "Must specify rawType when using raw.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.rawType"),
+                message: "Must specify rawType when using raw.".to_string(),
+            });
         }
 
         if self.raw.is_some() && self.counter.is_some() {
@@ -155,12 +154,12 @@ pub struct MetricSource {
 }
 
 impl MetricSource {
-    pub fn validate(&self, path: &str) -> ValidationResult {
+    pub fn validate(&self, path: &str) -> ParserResult<()> {
         if self.metric_source_ref.is_none() && self.type_.is_none() {
-            return Err(ValidationError::new(
-                format!("{path}.metricSourceRef"),
-                "Must specify one of type or metricSourceRef.",
-            ));
+            return Err(ParserError::Validation {
+                path: format!("{path}.metricSourceRef"),
+                message: "Must specify one of type or metricSourceRef.".to_string(),
+            });
         }
         Ok(())
     }
@@ -311,10 +310,12 @@ mod unhappy_path_tests {
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
 
         let result = sli.validate(false, None);
-        assert!(result.is_err_and(|e| {
-            e.path == "SLI.spec.thresholdMetric"
-                && e.message == "Must specify either thresholdMetric or ratioMetric."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "SLI.spec.thresholdMetric, SLI.spec.ratioMetric"
+                    && message == "Must specify either thresholdMetric or ratioMetric."
+            ))
+        );
     }
 
     #[test]
@@ -341,10 +342,12 @@ mod unhappy_path_tests {
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
 
         let result = sli.validate(false, None);
-        assert!(result.is_err_and(|e| {
-            e.path == "SLI.spec.thresholdMetric"
-                && e.message == "Cannot specify both thresholdMetric and ratioMetric."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "SLI.spec.thresholdMetric, SLI.spec.ratioMetric"
+                    && message == "Cannot specify both thresholdMetric and ratioMetric."
+            ))
+        );
     }
 
     #[test]
@@ -370,10 +373,12 @@ mod unhappy_path_tests {
 
         let result = sli.validate(false, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "SLI.spec.ratioMetric.good"
-                && e.message == "Cannot specify both good and bad."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+            if path == "SLI.spec.ratioMetric.good, SLI.spec.ratioMetric.bad"
+                    && message == "Cannot specify both good and bad."
+            ))
+        );
     }
 
     #[test]
@@ -393,10 +398,12 @@ mod unhappy_path_tests {
 
         let result = sli.validate(false, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "SLI.spec.ratioMetric.good"
-                && e.message == "Must specify total when using good or bad."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "SLI.spec.ratioMetric.total"
+                    && message == "Must specify total when using good or bad."
+            ))
+        );
     }
 
     #[test]
@@ -416,10 +423,12 @@ mod unhappy_path_tests {
 
         let result = sli.validate(false, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "SLI.spec.ratioMetric.total"
-                && e.message == "Must specify good or bad when using total."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "SLI.spec.ratioMetric.total"
+                    && message == "Must specify good or bad when using total."
+            ))
+        );
     }
 
     #[test]
@@ -439,10 +448,12 @@ mod unhappy_path_tests {
 
         let result = sli.validate(false, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "SLI.spec.ratioMetric.rawType"
-                && e.message == "Must specify rawType when using raw."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+                if path == "SLI.spec.ratioMetric.rawType"
+                    && message == "Must specify rawType when using raw."
+            ))
+        );
     }
 
     #[test]
@@ -466,9 +477,11 @@ mod unhappy_path_tests {
 
         let result = sli.validate(false, None);
 
-        assert!(result.is_err_and(|e| {
-            e.path == "SLI.spec.ratioMetric.raw"
-                && e.message == "Cannot specify raw with good, bad, or total."
-        }));
+        assert!(
+            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+                path == "SLI.spec.ratioMetric.raw"
+                    && message == "Cannot specify raw with good, bad, or total."
+            ))
+        );
     }
 }
