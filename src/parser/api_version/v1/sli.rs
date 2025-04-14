@@ -1,4 +1,3 @@
-use std::path;
 
 use serde::Deserialize;
 
@@ -23,10 +22,8 @@ impl SLIDoc {
                     "Inline SLI must not have a kind.",
                 ));
             }
-        } else if !is_inline {
-            if self.kind.is_none() {
-                return Err(ValidationError::new("kind", "SLI must have a kind."));
-            }
+        } else if !is_inline && self.kind.is_none() {
+            return Err(ValidationError::new("kind", "SLI must have a kind."));
         }
 
         match path {

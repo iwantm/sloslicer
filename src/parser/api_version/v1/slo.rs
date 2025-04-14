@@ -98,13 +98,11 @@ impl SLOSpec {
         sli_map: Option<&HashMap<String, SLIDoc>>,
         path: &str,
     ) -> ValidationResult {
-        if is_composite {
-            if self.indicator.is_some() || self.indicator_ref.is_some() {
-                return Err(ValidationError::new(
-                    format!("{path}.indicator"),
-                    "indicator is not allowed for composite SLOs.",
-                ));
-            }
+        if is_composite && (self.indicator.is_some() || self.indicator_ref.is_some()) {
+            return Err(ValidationError::new(
+                format!("{path}.indicator"),
+                "indicator is not allowed for composite SLOs.",
+            ));
         }
         if !is_composite {
             match (&self.indicator, &self.indicator_ref) {

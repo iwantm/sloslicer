@@ -100,10 +100,10 @@ impl AlertPolicySpec {
                 let reference = &reference.condition_ref;
                 if let Some(condition_map) = condition_map {
                     condition_map.get(reference).ok_or_else(|| {
-                        return ValidationError::new(
+                        ValidationError::new(
                             format!("{path}.conditions"),
                             format!("Condition reference `{}` not found.", reference),
-                        );
+                        )
                     })?;
                 }
             }
@@ -125,10 +125,10 @@ impl AlertPolicySpec {
                     let reference = &reference.target_ref;
                     if let Some(notification_target_map) = notification_target_map {
                         notification_target_map.get(reference).ok_or_else(|| {
-                            return ValidationError::new(
+                            ValidationError::new(
                                 format!("{path}.notificationTargets[{}].targetRef", i),
                                 format!("Notification target reference `{}` not found.", reference),
-                            );
+                            )
                         })?;
                     }
                 }

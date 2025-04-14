@@ -85,10 +85,10 @@ impl Condition {
 
             Ok(())
         } else {
-            return Err(ValidationError::new(
+            Err(ValidationError::new(
                 format!("{path}.kind"),
                 "Unsupported condition kind.",
-            ));
+            ))
         }
     }
 }
