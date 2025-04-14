@@ -1,8 +1,8 @@
 use super::alert_condition::AlertConditionDocument;
 use super::alert_notification_target::AlertNotificationTargetDocument;
 
+use super::super::super::validation::{ValidationError, ValidationResult};
 use super::document::{Kind, Metadata};
-use super::validation::{ValidationError, ValidationResult};
 use serde::Deserialize;
 
 use std::collections::HashMap;
@@ -148,9 +148,9 @@ impl AlertPolicySpec {
 mod happy_path_tests {
     use super::*;
 
-    use crate::parser::alert_condition::{AlertConditionSpec, Condition, CondtionKind};
-    use crate::parser::alert_notification_target::AlertNotificationTargetSpec;
-    use crate::parser::common::{DurationShorthand, Operator};
+    use super::super::alert_condition::{AlertConditionSpec, Condition, CondtionKind};
+    use super::super::alert_notification_target::AlertNotificationTargetSpec;
+    use super::super::common::{DurationShorthand, Operator};
 
     fn create_condition() -> AlertConditionDocument {
         AlertConditionDocument {
@@ -300,7 +300,7 @@ mod happy_path_tests {
 
 #[cfg(test)]
 mod unhappy_path_tests {
-    use crate::parser::{
+    use super::super::{
         alert_condition::{AlertConditionSpec, Condition, CondtionKind},
         alert_notification_target::AlertNotificationTargetSpec,
         common::{DurationShorthand, Operator},

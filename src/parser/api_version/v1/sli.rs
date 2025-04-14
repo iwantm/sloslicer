@@ -3,8 +3,8 @@ use std::path;
 use serde::Deserialize;
 
 use super::{
+    super::super::validation::{ValidationError, ValidationResult},
     document::{Kind, Metadata},
-    validation::{ValidationError, ValidationResult},
 };
 
 #[derive(Debug, Deserialize, PartialEq)]

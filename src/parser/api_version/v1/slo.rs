@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
+use super::super::super::validation::{ValidationError, ValidationResult};
 use super::alert_condition::AlertConditionDocument;
 use super::alert_notification_target::AlertNotificationTargetDocument;
 use super::alert_policy::AlertPolicyDoc;
@@ -9,7 +10,6 @@ use super::document::Kind;
 use super::document::Metadata;
 use super::objective::Objective;
 use super::sli::SLIDoc;
-use super::validation::{ValidationError, ValidationResult};
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct AlertPolicyRef {
@@ -296,7 +296,7 @@ pub struct CalendarDetails {
 #[cfg(test)]
 
 mod happy_path_tests {
-    use crate::parser::{
+    use super::super::{
         alert_condition::{AlertConditionSpec, Condition, CondtionKind},
         alert_notification_target::AlertNotificationTargetSpec,
         alert_policy::{AlertCondition, AlertPolicySpec, NotificationTarget},

@@ -1,6 +1,6 @@
 use super::{
+    super::super::validation::{ValidationError, ValidationResult},
     document::{Kind, Metadata},
-    validation::{ValidationError, ValidationResult},
 };
 use serde::Deserialize;
 
@@ -48,7 +48,7 @@ impl AlertNotificationTargetSpec {
 #[cfg(test)]
 
 mod happy_path_tests {
-    use crate::parser::document::StringOrVec;
+    use super::super::document::StringOrVec;
 
     use super::*;
 

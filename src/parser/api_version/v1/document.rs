@@ -3,12 +3,13 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
+use super::alert_condition::AlertConditionSpec;
+use super::alert_notification_target::AlertNotificationTargetSpec;
 use super::alert_policy::AlertPolicySpec;
 use super::data_source::DataSourceSpec;
+use super::service::ServiceSpec;
 use super::sli::SLISpec;
 use super::slo::SLOSpec;
-use crate::parser::alert_condition::AlertConditionSpec;
-use crate::parser::alert_notification_target::AlertNotificationTargetSpec;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub enum Kind {
@@ -31,13 +32,13 @@ pub enum Kind {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", content = "spec")]
 pub enum Spec {
-    // DataSource(DataSourceSpec),
+    DataSource(DataSourceSpec),
     SLO(SLOSpec),
     SLI(SLISpec),
     AlertPolicy(AlertPolicySpec),
     AlertCondition(AlertConditionSpec),
     AlertNotificationTarget(AlertNotificationTargetSpec),
-    // Service(ServiceSpec),
+    Service(ServiceSpec),
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

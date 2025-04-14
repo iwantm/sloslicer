@@ -1,6 +1,6 @@
+use super::super::super::validation::{ValidationError, ValidationResult};
 use super::common::{DurationShorthand, Operator};
 use super::document::{Kind, Metadata};
-use super::validation::{ValidationError, ValidationResult};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]

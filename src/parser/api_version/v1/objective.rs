@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 
+use super::super::super::validation::{ValidationError, ValidationResult};
 use super::common::{BudgetingMethod, DurationShorthand, Operator};
 use super::sli::{SLIDoc, SLISpec};
-use super::validation::{ValidationError, ValidationResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -246,7 +246,7 @@ impl Objective {
 #[cfg(test)]
 
 mod happy_path_tests {
-    use crate::parser::{
+    use super::super::{
         document::{Kind, Metadata},
         sli::{MetricSource, RatioMetric, ThresholdMetric},
     };
@@ -430,11 +430,11 @@ mod happy_path_tests {
 }
 
 mod unhappy_path_tests {
-    use super::*;
-    use crate::parser::{
+    use super::super::{
         document::{Kind, Metadata},
         sli::{MetricSource, RatioMetric, ThresholdMetric},
     };
+    use super::*;
 
     fn default_sli_map() -> HashMap<String, SLIDoc> {
         let mut sli_map = HashMap::new();
