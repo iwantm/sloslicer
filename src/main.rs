@@ -1,26 +1,29 @@
-mod parser;
 use parser::document::Document;
+use utils::errors::ParserResult;
 
-fn main() {
-    let yaml = r#"
-    apiVersion: openslo/v1
-    kind: SLI
-    metadata:
-        name: http-requests
-    spec:
-        thresholdMetric:
-            metricSource:
-                type: Prometheus
-                spec:
-                    query: sum(rate(http_requests_total[5m]))
-"#;
+mod cli;
+mod parser;
+mod utils;
 
-    let parsed = Document::parse(yaml).unwrap();
+fn main() -> ParserResult<()> {
+    // let yaml = r#"
+    // apiVersion: openslo/v1
+    // kind: SLI
+    // metadata:
+    //     name: http-requests
+    // spec:
+    //     thresholdMetric:
+    //         metricSource:
+    //             type: Prometheus
+    //             spec:
+    //                 query: sum(rate(http_requests_total[5m]))
+    // "#;
 
-    println!("{:?}", parsed);
+    // let parsed = Document::parse(yaml);
+    // match parsed {
+    //     Ok(doc) => println!("{:#?}", doc),
+    //     Err(e) => eprintln!("Parse error: {:?}", e),
+    // }
 
-    let test = parsed.validate("test", None, None, None, None);
-    println!("{:?}", test);
-
-    println!("Hello, world!");
+    cli::run()
 }

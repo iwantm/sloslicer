@@ -1,9 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::common::{Kind, Metadata};
-use crate::parser::errors::{ParserError, ParserResult};
+use crate::utils::errors::{ParserError, ParserResult};
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertNotificationTargetDoc {
     pub kind: Kind,
     pub metadata: Metadata,
@@ -25,7 +25,7 @@ impl AlertNotificationTargetDoc {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertNotificationTargetSpec {
     pub target: String,
     pub description: Option<String>,

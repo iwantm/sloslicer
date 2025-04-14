@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use super::common::{BudgetingMethod, DurationShorthand, Operator};
 use super::sli::SLIDoc;
-use crate::parser::errors::{ParserError, ParserResult};
+use crate::utils::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -29,7 +29,7 @@ impl Serialize for TimeSliceWindow {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Objective {
     #[serde(rename = "displayName")]
     pub display_name: Option<String>,
@@ -115,13 +115,6 @@ impl Objective {
     }
 
     fn validate_operators(&self, path: &str) -> ParserResult<()> {
-        if self.op.is_some() && self.value.is_none() {
-            return Err(ParserError::Validation {
-                path: format!("{path}.value"),
-                message: "Value must be specified when using an operator.".to_string(),
-            });
-        }
-
         if self.value.is_some() && self.op.is_none() {
             return Err(ParserError::Validation {
                 path: format!("{path}.op"),
@@ -253,7 +246,6 @@ impl Objective {
 }
 
 #[cfg(test)]
-
 mod happy_path_tests {
     use crate::parser::api_version::v1::sli::SLISpec;
 
@@ -606,31 +598,6 @@ mod unhappy_path_tests {
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
                 path == "test_path.timeSliceTarget"
                     && message == "TimeSlice target must be between 0 and 1."
-            ))
-        );
-    }
-
-    #[test]
-    fn test_op_without_value() {
-        let objective = Objective {
-            display_name: Some("Test Objective".to_string()),
-            op: Some(Operator::Lte),
-            value: None,
-            target: None,
-            target_percent: Some(90.0),
-            time_slice_target: None,
-            time_slice_window: None,
-            indicator: None,
-            indicator_ref: None,
-            composite_weight: None,
-        };
-
-        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
-
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
-                path == "test_path.value"
-                    && message == "Value must be specified when using an operator."
             ))
         );
     }

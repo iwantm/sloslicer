@@ -1,9 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::common::{Kind, Metadata};
-use crate::parser::errors::{ParserError, ParserResult};
+use crate::utils::errors::{ParserError, ParserResult};
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct SLIDoc {
     pub kind: Option<Kind>,
     pub metadata: Metadata,
@@ -25,7 +25,7 @@ impl SLIDoc {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct SLISpec {
     pub description: Option<String>,
     #[serde(rename = "thresholdMetric")]
@@ -66,7 +66,7 @@ impl SLISpec {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct ThresholdMetric {
     #[serde(rename = "metricSource")]
     pub metric_source: MetricSource,
@@ -80,7 +80,7 @@ impl ThresholdMetric {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct RatioMetric {
     pub counter: Option<bool>,
     pub good: Option<MetricSource>,
@@ -137,7 +137,7 @@ impl RatioMetric {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct MetricSource {
     #[serde(rename = "metricSourceRef")]
     pub metric_source_ref: Option<String>,
@@ -158,7 +158,7 @@ impl MetricSource {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub enum RawType {
     #[serde(rename = "success")]
     Success,

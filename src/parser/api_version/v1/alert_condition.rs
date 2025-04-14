@@ -1,9 +1,9 @@
 use super::common::{DurationShorthand, Kind, Metadata, Operator};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::parser::errors::{ParserError, ParserResult};
+use crate::utils::errors::{ParserError, ParserResult};
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertConditionDoc {
     pub kind: Kind,
     pub metadata: Metadata,
@@ -25,7 +25,7 @@ impl AlertConditionDoc {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub enum CondtionKind {
     #[serde(rename = "burnrate")]
     Burnrate,
@@ -35,7 +35,7 @@ fn default_kind() -> CondtionKind {
     CondtionKind::Burnrate
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct Condition {
     pub kind: CondtionKind,
     pub op: Option<Operator>,
@@ -97,7 +97,7 @@ impl<'de> Deserialize<'de> for Condition {
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Deserialize)]
+        #[derive(Deserialize, Serialize)]
         struct ConditionFields {
             #[serde(default = "default_kind")]
             kind: CondtionKind,
@@ -125,7 +125,7 @@ impl<'de> Deserialize<'de> for Condition {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertConditionSpec {
     pub description: Option<String>,
     pub severity: String,

@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::alert_condition::AlertConditionDoc;
@@ -7,22 +7,22 @@ use super::alert_policy::AlertPolicyDoc;
 use super::common::{BudgetingMethod, DurationShorthand, Kind, Metadata};
 use super::objective::Objective;
 use super::sli::SLIDoc;
-use crate::parser::errors::{ParserError, ParserResult};
+use crate::utils::errors::{ParserError, ParserResult};
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertPolicyRef {
     #[serde(rename = "alertPolicyRef")]
     pub alert_policy_ref: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum AlertPolicy {
     Inline(Box<AlertPolicyDoc>),
     Reference(AlertPolicyRef),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SLODoc {
     pub kind: Option<Kind>,
     pub metadata: Metadata,
@@ -50,7 +50,7 @@ impl SLODoc {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SLOSpec {
     pub description: Option<String>,
     pub service: String,
@@ -258,7 +258,7 @@ impl SLOSpec {
         Ok(())
     }
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TimeWindow {
     pub duration: DurationShorthand,
     pub calendar: Option<CalendarDetails>,
@@ -289,7 +289,7 @@ impl TimeWindow {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CalendarDetails {
     #[serde(rename = "startTime")]
     pub start_time: String,

@@ -2,12 +2,12 @@ use super::alert_condition::AlertConditionDoc;
 use super::alert_notification_target::AlertNotificationTargetDoc;
 
 use super::common::{Kind, Metadata};
-use crate::parser::errors::{ParserError, ParserResult};
-use serde::Deserialize;
+use crate::utils::errors::{ParserError, ParserResult};
+use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertPolicyDoc {
     pub kind: Kind,
     pub metadata: Metadata,
@@ -38,33 +38,33 @@ impl AlertPolicyDoc {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum AlertCondition {
     Inline(Box<AlertConditionDoc>),
     Reference(AlertConditionRef),
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertConditionRef {
     #[serde(rename = "conditionRef")]
     pub condition_ref: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum NotificationTarget {
     Inline(AlertNotificationTargetDoc),
     Reference(NotificationTargetRef),
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct NotificationTargetRef {
     #[serde(rename = "targetRef")]
     pub target_ref: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertPolicySpec {
     pub description: Option<String>,
     #[serde(default, rename = "alertWhenNoData")]
@@ -304,7 +304,6 @@ mod happy_path_tests {
 mod unhappy_path_tests {
     use super::super::{
         alert_condition::{AlertConditionSpec, Condition, CondtionKind},
-        alert_notification_target::AlertNotificationTargetSpec,
         common::{DurationShorthand, Operator},
     };
 
@@ -324,21 +323,6 @@ mod unhappy_path_tests {
                 severity: "high".to_string(),
             },
             kind: Kind::AlertCondition,
-            metadata: Metadata {
-                name: "test".to_string(),
-                display_name: None,
-                labels: None,
-                annotations: None,
-            },
-        }
-    }
-    fn create_target() -> AlertNotificationTargetDoc {
-        AlertNotificationTargetDoc {
-            spec: AlertNotificationTargetSpec {
-                target: "slack".to_string(),
-                description: Some("Slack channel".to_string()),
-            },
-            kind: Kind::AlertNotificationTarget,
             metadata: Metadata {
                 name: "test".to_string(),
                 display_name: None,

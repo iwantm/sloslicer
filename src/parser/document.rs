@@ -1,18 +1,16 @@
 use core::str;
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use crate::utils::errors::{ParserError, ParserResult};
+use serde::{Deserialize, Serialize};
 
-use super::{
-    api_version::v1::{
-        alert_condition::AlertConditionDoc, alert_notification_target::AlertNotificationTargetDoc,
-        alert_policy::AlertPolicyDoc, data_source::DataSourceDoc, service::ServiceDoc, sli::SLIDoc,
-        slo::SLODoc,
-    },
-    errors::{ParserError, ParserResult},
+use super::api_version::v1::{
+    alert_condition::AlertConditionDoc, alert_notification_target::AlertNotificationTargetDoc,
+    alert_policy::AlertPolicyDoc, data_source::DataSourceDoc, service::ServiceDoc, sli::SLIDoc,
+    slo::SLODoc,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "kind")]
 pub enum TypedDocument {
     DataSource(DataSourceDoc),
@@ -27,7 +25,7 @@ pub enum TypedDocument {
     InvalidKind,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Document {
     #[serde(rename = "apiVersion")]
     pub api_version: String,

@@ -1,16 +1,16 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::common::{Kind, Metadata};
-use crate::parser::errors::{ParserError, ParserResult};
+use crate::utils::errors::{ParserError, ParserResult};
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct DataSourceDoc {
     pub kind: Kind,
     pub metadata: Metadata,
     pub spec: DataSourceSpec,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct DataSourceSpec {
     pub description: Option<String>,
     #[serde(rename = "type")]
