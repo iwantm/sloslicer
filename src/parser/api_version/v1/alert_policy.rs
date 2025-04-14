@@ -41,7 +41,7 @@ impl AlertPolicyDoc {
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum AlertCondition {
-    Inline(AlertConditionDoc),
+    Inline(Box<AlertConditionDoc>),
     Reference(AlertConditionRef),
 }
 

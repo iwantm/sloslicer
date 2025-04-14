@@ -18,7 +18,7 @@ pub struct AlertPolicyRef {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum AlertPolicy {
-    Inline(AlertPolicyDoc),
+    Inline(Box<AlertPolicyDoc>),
     Reference(AlertPolicyRef),
 }
 
@@ -298,7 +298,6 @@ pub struct CalendarDetails {
 }
 
 #[cfg(test)]
-
 mod happy_path_tests {
     use super::super::{
         alert_condition::{AlertConditionSpec, Condition, CondtionKind},
@@ -379,7 +378,7 @@ mod happy_path_tests {
         sli_map.insert(
             "availability-sli".to_string(),
             SLIDoc {
-                kind: Some(Kind::SLO),
+                kind: Some(Kind::Slo),
                 metadata: Metadata {
                     name: "availability-sli".to_string(),
                     display_name: None,
@@ -437,7 +436,7 @@ mod happy_path_tests {
         sli_map.insert(
             "slo-2".to_string(),
             SLIDoc {
-                kind: Some(Kind::SLO),
+                kind: Some(Kind::Slo),
                 metadata: Metadata {
                     name: "availability-sli".to_string(),
                     display_name: None,
@@ -466,7 +465,7 @@ mod happy_path_tests {
         sli_map.insert(
             "slo-1".to_string(),
             SLIDoc {
-                kind: Some(Kind::SLO),
+                kind: Some(Kind::Slo),
                 metadata: Metadata {
                     name: "availability-sli".to_string(),
                     display_name: None,
@@ -527,7 +526,7 @@ mod happy_path_tests {
         sli_map.insert(
             "error-rate-sli".to_string(),
             SLIDoc {
-                kind: Some(Kind::SLO),
+                kind: Some(Kind::Slo),
                 metadata: Metadata {
                     name: "availability-sli".to_string(),
                     display_name: None,
@@ -564,7 +563,7 @@ mod happy_path_tests {
                     alert_when_no_data: false,
                     alert_when_resolved: false,
                     alert_when_breaching: false,
-                    conditions: vec![AlertCondition::Inline(AlertConditionDoc {
+                    conditions: vec![AlertCondition::Inline(Box::new(AlertConditionDoc {
                         kind: Kind::AlertCondition,
                         metadata: Metadata {
                             name: "high-error-rate-alert".to_string(),
@@ -583,7 +582,7 @@ mod happy_path_tests {
                                 alert_after: Some(DurationShorthand("0m".to_string())),
                             },
                         },
-                    })],
+                    }))],
                     notification_targets: vec![NotificationTarget::Inline(
                         AlertNotificationTargetDoc {
                             kind: Kind::AlertNotificationTarget,

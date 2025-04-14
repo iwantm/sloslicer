@@ -146,7 +146,6 @@ impl AlertConditionSpec {
 }
 
 #[cfg(test)]
-
 mod happy_path_tests {
     use super::*;
 

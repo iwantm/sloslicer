@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 
 use super::common::{BudgetingMethod, DurationShorthand, Operator};
-use super::sli::{SLIDoc, SLISpec};
+use super::sli::SLIDoc;
 use crate::parser::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize)]
@@ -255,6 +255,8 @@ impl Objective {
 #[cfg(test)]
 
 mod happy_path_tests {
+    use crate::parser::api_version::v1::sli::SLISpec;
+
     use super::super::{
         common::{Kind, Metadata},
         sli::{MetricSource, RatioMetric, ThresholdMetric},
@@ -278,7 +280,7 @@ mod happy_path_tests {
                     ratio_metric: None,
                     description: None,
                 },
-                kind: Some(Kind::SLI),
+                kind: Some(Kind::Sli),
                 metadata: Metadata {
                     name: "Test SLI".to_string(),
                     display_name: None,
@@ -291,7 +293,7 @@ mod happy_path_tests {
         sli_map.insert(
             "ratio_metric".to_string(),
             SLIDoc {
-                kind: Some(Kind::SLI),
+                kind: Some(Kind::Sli),
                 metadata: Metadata {
                     name: "Test SLI".to_string(),
                     display_name: None,
@@ -438,7 +440,10 @@ mod happy_path_tests {
     }
 }
 
+#[cfg(test)]
 mod unhappy_path_tests {
+    use crate::parser::api_version::v1::sli::SLISpec;
+
     use super::super::{
         common::{Kind, Metadata},
         sli::{MetricSource, RatioMetric, ThresholdMetric},
@@ -461,7 +466,7 @@ mod unhappy_path_tests {
                     ratio_metric: None,
                     description: None,
                 },
-                kind: Some(Kind::SLI),
+                kind: Some(Kind::Sli),
                 metadata: Metadata {
                     name: "Test SLI".to_string(),
                     display_name: None,
@@ -474,7 +479,7 @@ mod unhappy_path_tests {
         sli_map.insert(
             "ratio_metric".to_string(),
             SLIDoc {
-                kind: Some(Kind::SLI),
+                kind: Some(Kind::Sli),
                 metadata: Metadata {
                     name: "Test SLI".to_string(),
                     display_name: None,

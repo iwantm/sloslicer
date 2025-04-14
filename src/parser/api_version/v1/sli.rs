@@ -14,17 +14,10 @@ impl SLIDoc {
     pub fn validate(&self, is_inline: bool, path: Option<&str>) -> ParserResult<()> {
         let path = path.unwrap_or("SLI");
 
-        if is_inline {
-            if self.kind.is_some() {
-                return Err(ParserError::Validation {
-                    path: format!("{path}.kind"),
-                    message: "Inline SLI must not have a kind.".to_string(),
-                });
-            }
-        } else if !is_inline && self.kind.is_none() {
+        if is_inline && self.kind.is_some() {
             return Err(ParserError::Validation {
                 path: format!("{path}.kind"),
-                message: "SLI must have a kind.".to_string(),
+                message: "Inline SLI must not have a kind.".to_string(),
             });
         }
 

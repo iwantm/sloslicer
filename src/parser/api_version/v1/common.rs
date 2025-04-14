@@ -60,9 +60,9 @@ pub enum Kind {
     #[serde(rename = "DataSource")]
     DataSource,
     #[serde(rename = "SLO")]
-    SLO,
+    Slo,
     #[serde(rename = "SLI")]
-    SLI,
+    Sli,
     #[serde(rename = "AlertPolicy")]
     AlertPolicy,
     #[serde(rename = "AlertCondition")]

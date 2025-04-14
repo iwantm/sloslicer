@@ -44,7 +44,6 @@ impl AlertNotificationTargetSpec {
 }
 
 #[cfg(test)]
-
 mod happy_path_tests {
     use super::super::common::StringOrVec;
 
