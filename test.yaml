@@ -1,8 +1,10 @@
 apiVersion: openslo/v1
-kind: SLO
+kind: AlertPolicy
 metadata:
-  name: web-availability
-  displayName: SLO for web availability
+  name: high-priority
+  displayName: High Priority
+  annotations:
+    openslo.com/service-folder: ./my/directory
   labels:
     env:
       - prod
@@ -10,35 +12,21 @@ metadata:
       - team-a
       - team-b
 spec:
-  description: X% of search requests are successful
-  service: web
-  indicator:
-    metadata:
-      name: web-successful-requests-ratio
-    spec:
-      ratioMetric:
-        counter: true
-        good:
-          metricSource:
-            type: Prometheus
-            spec:
-              query: sum(http_requests{k8s_cluster="prod",component="web",code=~"2xx|4xx"})
-        total:
-          metricSource:
-            type: Prometheus
-            spec:
-              query: sum(http_requests{k8s_cluster="prod",component="web"})
-  timeWindow:
-    - duration: 1w
-      isRolling: false
-      calendar:
-        startTime: 2022-01-01 12:00:00
-        timeZone: America/New_York
-  budgetingMethod: Timeslices
-  objectives:
-    - displayName: Good
-      op: gt
-      value: 7
-      target: 0.995
-      timeSliceTarget: 0.95
-      timeSliceWindow: 1m
+  description: Alert policy for high priority notifications, notifies on-call via pager
+  alertWhenBreaching: true
+  conditions:
+    - kind: AlertCondition
+      metadata:
+        name: memory-usage-breach
+        displayName: Memory Usage breaching
+      spec:
+        description: SLO burn rate for memory-usage-breach exceeds 2
+        severity: page
+        condition:
+          kind: burnrate
+          op: gt
+          threshold: 2
+          lookbackWindow: 1h
+          alertAfter: 5m
+  notificationTargets:
+    - targetRef: on-call-pd-notification

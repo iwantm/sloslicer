@@ -5,7 +5,7 @@ use crate::utils::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertNotificationTargetDoc {
-    pub kind: Kind,
+    pub kind: Option<Kind>,
     pub metadata: Metadata,
     pub spec: AlertNotificationTargetSpec,
 }
@@ -14,7 +14,7 @@ impl AlertNotificationTargetDoc {
     pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
         let path = path.unwrap_or("AlertNotificationTarget");
 
-        if !matches!(self.kind, Kind::AlertNotificationTarget) {
+        if !matches!(self.kind, Some(Kind::AlertNotificationTarget)) {
             return Err(ParserError::Validation {
                 path: format!("{path}.kind"),
                 message: "Expected kind to be AlertNotificationTarget.".to_string(),
@@ -52,7 +52,7 @@ mod happy_path_tests {
     #[test]
     fn test_alert_notification_target_spec() {
         let expected = AlertNotificationTargetDoc {
-            kind: Kind::AlertNotificationTarget,
+            kind: Some(Kind::AlertNotificationTarget),
             metadata: Metadata {
                 name: "test".to_string(),
                 display_name: None,
@@ -90,7 +90,7 @@ mod happy_path_tests {
     #[test]
     fn test_alert_notification_target_spec_full() {
         let expected = AlertNotificationTargetDoc {
-            kind: Kind::AlertNotificationTarget,
+            kind: Some(Kind::AlertNotificationTarget),
             metadata: Metadata {
                 name: "test".to_string(),
                 display_name: None,

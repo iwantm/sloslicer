@@ -5,7 +5,7 @@ use crate::utils::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertConditionDoc {
-    pub kind: Kind,
+    pub kind: Option<Kind>,
     pub metadata: Metadata,
     pub spec: AlertConditionSpec,
 }
@@ -14,7 +14,7 @@ impl AlertConditionDoc {
     pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
         let path = path.unwrap_or("AlertCondition");
 
-        if !matches!(self.kind, Kind::AlertCondition) {
+        if !matches!(self.kind, Some(Kind::AlertCondition)) {
             return Err(ParserError::Validation {
                 path: format!("{path}.kind"),
                 message: "Expected kind to be AlertCondition.".to_string(),
@@ -165,7 +165,7 @@ mod happy_path_tests {
         "#;
 
         let expected = AlertConditionDoc {
-            kind: Kind::AlertCondition,
+            kind: Some(Kind::AlertCondition),
             metadata: Metadata {
                 name: "test".to_string(),
                 display_name: None,
@@ -211,7 +211,7 @@ mod happy_path_tests {
         "#;
 
         let expected = AlertConditionDoc {
-            kind: Kind::AlertCondition,
+            kind: Some(Kind::AlertCondition),
             metadata: Metadata {
                 name: "test".to_string(),
                 display_name: None,

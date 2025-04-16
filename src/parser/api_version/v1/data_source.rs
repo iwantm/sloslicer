@@ -5,7 +5,7 @@ use crate::utils::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct DataSourceDoc {
-    pub kind: Kind,
+    pub kind: Option<Kind>,
     pub metadata: Metadata,
     pub spec: DataSourceSpec,
 }
@@ -22,13 +22,6 @@ pub struct DataSourceSpec {
 impl DataSourceDoc {
     pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
         let path = path.unwrap_or("DataSource");
-
-        if !matches!(self.kind, Kind::DataSource) {
-            return Err(ParserError::Validation {
-                path: format!("{path}.kind"),
-                message: "Invalid kind specified. Expected `DataSource`.".to_string(),
-            });
-        }
 
         if self.spec.type_.trim().is_empty() {
             return Err(ParserError::Validation {

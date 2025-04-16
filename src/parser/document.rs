@@ -5,14 +5,27 @@ use crate::utils::errors::{ParserError, ParserResult};
 use serde::{Deserialize, Serialize};
 
 use super::api_version::v1::{
-    alert_condition::AlertConditionDoc, alert_notification_target::AlertNotificationTargetDoc,
-    alert_policy::AlertPolicyDoc, data_source::DataSourceDoc, service::ServiceDoc, sli::SLIDoc,
-    slo::SLODoc,
+    alert_condition::{AlertConditionDoc, AlertConditionSpec},
+    alert_notification_target::{AlertNotificationTargetDoc, AlertNotificationTargetSpec},
+    alert_policy::{AlertPolicyDoc, AlertPolicySpec},
+    common::{Kind, Metadata},
+    data_source::{DataSourceDoc, DataSourceSpec},
+    service::{ServiceDoc, ServiceSpec},
+    sli::{SLIDoc, SLISpec},
+    slo::{SLODoc, SLOSpec},
 };
 
+#[derive(Debug, Deserialize)]
+pub struct RootDocument {
+    #[serde(rename = "apiVersion")]
+    pub api_version: String,
+    pub kind: Kind,
+    pub metadata: Metadata,
+    pub spec: serde_yaml::Value,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "kind")]
-pub enum TypedDocument {
+pub enum Document {
     DataSource(DataSourceDoc),
     #[serde(rename = "SLO")]
     Slo(SLODoc),
@@ -25,69 +38,118 @@ pub enum TypedDocument {
     InvalidKind,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Document {
-    #[serde(rename = "apiVersion")]
-    pub api_version: String,
-    #[serde(flatten)]
-    pub doc: TypedDocument,
+impl TryFrom<RootDocument> for Document {
+    type Error = ParserError;
+
+    fn try_from(doc: RootDocument) -> ParserResult<Self> {
+        match doc.kind {
+            Kind::Slo => {
+                let typed_spec: SLOSpec = serde_yaml::from_value(doc.spec)?;
+                Ok(Document::Slo(SLODoc {
+                    kind: Some(Kind::Slo),
+                    metadata: doc.metadata,
+                    spec: typed_spec,
+                }))
+            }
+            Kind::Sli => {
+                let typed_spec: SLISpec = serde_yaml::from_value(doc.spec)?;
+                Ok(Document::Sli(SLIDoc {
+                    kind: Some(Kind::Sli),
+                    metadata: doc.metadata,
+                    spec: typed_spec,
+                }))
+            }
+            Kind::DataSource => {
+                let typed_spec: DataSourceSpec = serde_yaml::from_value(doc.spec)?;
+                Ok(Document::DataSource(DataSourceDoc {
+                    kind: Some(Kind::DataSource),
+                    metadata: doc.metadata,
+                    spec: typed_spec,
+                }))
+            }
+            Kind::AlertPolicy => {
+                let typed_spec: AlertPolicySpec = serde_yaml::from_value(doc.spec)?;
+                Ok(Document::AlertPolicy(AlertPolicyDoc {
+                    kind: Some(Kind::AlertPolicy),
+                    metadata: doc.metadata,
+                    spec: typed_spec,
+                }))
+            }
+            Kind::AlertCondition => {
+                let typed_spec: AlertConditionSpec = serde_yaml::from_value(doc.spec)?;
+                Ok(Document::AlertCondition(AlertConditionDoc {
+                    kind: Some(Kind::AlertCondition),
+                    metadata: doc.metadata,
+                    spec: typed_spec,
+                }))
+            }
+            Kind::AlertNotificationTarget => {
+                let typed_spec: AlertNotificationTargetSpec = serde_yaml::from_value(doc.spec)?;
+                Ok(Document::AlertNotificationTarget(
+                    AlertNotificationTargetDoc {
+                        kind: Some(Kind::AlertNotificationTarget),
+                        metadata: doc.metadata,
+                        spec: typed_spec,
+                    },
+                ))
+            }
+            Kind::Service => {
+                let typed_spec: ServiceSpec = serde_yaml::from_value(doc.spec)?;
+                Ok(Document::Service(ServiceDoc {
+                    kind: Some(Kind::Service),
+                    metadata: doc.metadata,
+                    spec: typed_spec,
+                }))
+            }
+        }
+    }
 }
 
 impl Document {
-    pub fn parse(yaml: &str) -> ParserResult<Self> {
-        Ok(serde_yaml::from_str(yaml)?)
+    pub fn parse(yaml: &str, path: &str) -> ParserResult<Self> {
+        let root: RootDocument = serde_yaml::from_str(yaml)?;
+        if !root.api_version.ends_with("v1") {
+            return Err(ParserError::Validation {
+                path: path.to_string(),
+                message: "Currently only v1 of the spec is supported".to_string(),
+            });
+        }
+
+        Document::try_from(root)
     }
 
     pub fn validate(
-        &self,
+        self,
         path: &str,
         sli_map: Option<&HashMap<String, SLIDoc>>,
         alert_policy_map: Option<&HashMap<String, AlertPolicyDoc>>,
         condition_map: Option<&HashMap<String, AlertConditionDoc>>,
         notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
     ) -> ParserResult<()> {
-        if !self.api_version.ends_with("v1") {
-            return Err(ParserError::Validation {
+        match self {
+            Document::DataSource(data_source_doc) => data_source_doc.validate(Some(path)),
+            Document::Slo(slodoc) => slodoc.validate(
+                Some(path),
+                sli_map,
+                alert_policy_map,
+                condition_map,
+                notification_target_map,
+            ),
+            Document::Sli(slidoc) => slidoc.validate(false, Some(path)),
+            Document::AlertPolicy(alert_policy_doc) => {
+                alert_policy_doc.validate(condition_map, notification_target_map, Some(path))
+            }
+            Document::AlertCondition(alert_condition_doc) => {
+                alert_condition_doc.validate(Some(path))
+            }
+            Document::AlertNotificationTarget(alert_notification_target_doc) => {
+                alert_notification_target_doc.validate(Some(path))
+            }
+            Document::Service(service_doc) => service_doc.validate(path),
+            Document::InvalidKind => Err(ParserError::Validation {
                 path: path.to_string(),
-                message: "Currently only v1 of the spec is supported".to_string(),
-            });
+                message: "Couldn't match kind".to_string(),
+            }),
         }
-        match &self.doc {
-            TypedDocument::DataSource(data_source_doc) => data_source_doc.validate(Some(path))?,
-            TypedDocument::Slo(slodoc) => {
-                return slodoc.validate(
-                    Some(path),
-                    sli_map,
-                    alert_policy_map,
-                    condition_map,
-                    notification_target_map,
-                );
-            }
-            TypedDocument::Sli(slidoc) => return slidoc.validate(false, Some(path)),
-            TypedDocument::AlertPolicy(alert_policy_doc) => {
-                return alert_policy_doc.validate(
-                    condition_map,
-                    notification_target_map,
-                    Some(path),
-                );
-            }
-
-            TypedDocument::AlertCondition(alert_condition_doc) => {
-                return alert_condition_doc.validate(Some(path));
-            }
-            TypedDocument::AlertNotificationTarget(alert_notification_target_doc) => {
-                return alert_notification_target_doc.validate(Some(path));
-            }
-
-            TypedDocument::Service(service_doc) => return service_doc.validate(path),
-            TypedDocument::InvalidKind => {
-                return Err(ParserError::Validation {
-                    path: path.to_string(),
-                    message: "Couldn't match kind".to_string(),
-                });
-            }
-        }
-
-        Ok(())
     }
 }

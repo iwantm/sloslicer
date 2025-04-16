@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertPolicyDoc {
-    pub kind: Kind,
+    pub kind: Option<Kind>,
     pub metadata: Metadata,
     pub spec: AlertPolicySpec,
 }
@@ -23,13 +23,6 @@ impl AlertPolicyDoc {
     ) -> ParserResult<()> {
         let path = path.unwrap_or("AlertPolicy");
 
-        if !matches!(self.kind, Kind::AlertPolicy) {
-            return Err(ParserError::Validation {
-                path: format!("{path}.kind"),
-                message: "SLI must have a kind.".to_string(),
-            });
-        }
-
         self.spec.validate(
             condition_map,
             notification_target_map,
@@ -41,8 +34,8 @@ impl AlertPolicyDoc {
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum AlertCondition {
-    Inline(Box<AlertConditionDoc>),
     Reference(AlertConditionRef),
+    Inline(Box<AlertConditionDoc>),
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -54,8 +47,8 @@ pub struct AlertConditionRef {
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum NotificationTarget {
-    Inline(AlertNotificationTargetDoc),
     Reference(NotificationTargetRef),
+    Inline(AlertNotificationTargetDoc),
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -132,6 +125,13 @@ impl AlertPolicySpec {
                                 ),
                             }
                         })?;
+                    } else {
+                        return Err(ParserError::Validation {
+                            path: format!("{path}.notificationTargets"),
+                            message:
+                                "Notification target map is required for indicatorRef validation."
+                                    .to_string(),
+                        });
                     }
                 }
                 NotificationTarget::Inline(inline_target) => {
@@ -167,7 +167,7 @@ mod happy_path_tests {
                 description: Some("High CPU usage".to_string()),
                 severity: "high".to_string(),
             },
-            kind: Kind::AlertCondition,
+            kind: Some(Kind::AlertCondition),
             metadata: Metadata {
                 name: "test".to_string(),
                 display_name: None,
@@ -182,7 +182,7 @@ mod happy_path_tests {
                 target: "slack".to_string(),
                 description: Some("Slack channel".to_string()),
             },
-            kind: Kind::AlertNotificationTarget,
+            kind: Some(Kind::AlertNotificationTarget),
             metadata: Metadata {
                 name: "test".to_string(),
                 display_name: None,
@@ -322,7 +322,7 @@ mod unhappy_path_tests {
                 description: Some("High CPU usage".to_string()),
                 severity: "high".to_string(),
             },
-            kind: Kind::AlertCondition,
+            kind: Some(Kind::AlertCondition),
             metadata: Metadata {
                 name: "test".to_string(),
                 display_name: None,

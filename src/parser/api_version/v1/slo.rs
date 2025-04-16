@@ -551,7 +551,7 @@ mod happy_path_tests {
         alert_policy_map.insert(
             "high-error-rate-alert".to_string(),
             AlertPolicyDoc {
-                kind: Kind::AlertPolicy,
+                kind: Some(Kind::AlertPolicy),
                 metadata: Metadata {
                     name: "high-error-rate-alert".to_string(),
                     display_name: None,
@@ -564,7 +564,7 @@ mod happy_path_tests {
                     alert_when_resolved: false,
                     alert_when_breaching: false,
                     conditions: vec![AlertCondition::Inline(Box::new(AlertConditionDoc {
-                        kind: Kind::AlertCondition,
+                        kind: Some(Kind::AlertCondition),
                         metadata: Metadata {
                             name: "high-error-rate-alert".to_string(),
                             display_name: None,
@@ -585,7 +585,7 @@ mod happy_path_tests {
                     }))],
                     notification_targets: vec![NotificationTarget::Inline(
                         AlertNotificationTargetDoc {
-                            kind: Kind::AlertNotificationTarget,
+                            kind: Some(Kind::AlertNotificationTarget),
                             metadata: Metadata {
                                 name: "notification-target".to_string(),
                                 display_name: None,
