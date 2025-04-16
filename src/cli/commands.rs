@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use owo_colors::OwoColorize;
 use serde::Deserialize;
 use serde_yaml::{Deserializer, Value};
 
@@ -19,9 +20,13 @@ pub fn validate(file: String) -> ParserResult<()> {
     }
 
     for (name, doc) in &docs {
-        match doc.validate(&format!("{}.{}", file, name), &docs) {
-            Ok(_) => println!("✅ Document: {name} is valid."),
-            Err(e) => eprintln!("🙅 Document: {name} is invalid. {e}"),
+        match doc.validate(&docs) {
+            Ok(_) => {
+                println!("[✅] {}.{} - {}", file, name, "Valid".green())
+            }
+            Err(e) => {
+                eprintln!("[🙅] {}.{} - {}\n ↪ {e}", file, name, "Invalid".red())
+            }
         }
     }
 

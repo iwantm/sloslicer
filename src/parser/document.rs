@@ -120,27 +120,23 @@ impl Document {
         Ok((root.metadata.name.clone(), Document::try_from(root)?))
     }
 
-    pub fn validate(
-        &self,
-        path: &str,
-        document_map: &HashMap<String, Document>,
-    ) -> ParserResult<()> {
+    pub fn validate(&self, document_map: &HashMap<String, Document>) -> ParserResult<()> {
         match self {
-            Document::DataSource(data_source_doc) => data_source_doc.validate(Some(path)),
-            Document::Slo(slodoc) => slodoc.validate(Some(path), document_map),
-            Document::Sli(slidoc) => slidoc.validate(false, Some(path)),
+            Document::DataSource(data_source_doc) => data_source_doc.validate(Some("DataSource")),
+            Document::Slo(slodoc) => slodoc.validate(Some("SLO"), document_map),
+            Document::Sli(slidoc) => slidoc.validate(false, Some("SLI")),
             Document::AlertPolicy(alert_policy_doc) => {
-                alert_policy_doc.validate(document_map, Some(path))
+                alert_policy_doc.validate(document_map, Some("AlertPolicy"))
             }
             Document::AlertCondition(alert_condition_doc) => {
-                alert_condition_doc.validate(Some(path))
+                alert_condition_doc.validate(Some("AlertCondition"))
             }
             Document::AlertNotificationTarget(alert_notification_target_doc) => {
-                alert_notification_target_doc.validate(Some(path))
+                alert_notification_target_doc.validate(Some("AlertNotificationTarget"))
             }
-            Document::Service(service_doc) => service_doc.validate(path),
+            Document::Service(service_doc) => service_doc.validate("Service"),
             Document::InvalidKind => Err(ParserError::Validation {
-                path: path.to_string(),
+                path: "None".to_owned(),
                 message: "Couldn't match kind".to_string(),
             }),
         }

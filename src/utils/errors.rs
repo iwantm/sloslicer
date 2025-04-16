@@ -1,3 +1,5 @@
+use std::fmt;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -9,7 +11,7 @@ pub enum ParserError {
     #[error("Failed to serialise json: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("Validation failed at {path} with message: {message}")]
+    #[error("{path}: {message}")]
     Validation { path: String, message: String },
 
     #[error("IO error: {0}")]

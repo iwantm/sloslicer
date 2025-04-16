@@ -142,7 +142,7 @@ metadata:
       - prod
     team:
       - on-call
-  name: on-call-pd-notification
+  name: on-call-pd-notificaion
 spec:
   description: Sends PagerDuty alert to the current on-call
   target: pagerduty
