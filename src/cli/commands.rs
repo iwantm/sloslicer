@@ -1,14 +1,28 @@
+use std::collections::HashMap;
+
+use serde::Deserialize;
+use serde_yaml::{Deserializer, Value};
+
 use crate::parser::document::Document;
 use crate::utils::errors::ParserResult;
 
 pub fn validate(file: String) -> ParserResult<()> {
     let contents = std::fs::read_to_string(&file)?;
 
-    let (name, doc) = Document::parse(&contents, &file)?;
+    let mut docs = HashMap::new();
 
-    match doc.validate(&file, None, None, None, None) {
-        Ok(_) => println!("✅ Document: {name} is valid."),
-        Err(e) => eprintln!("🙅 Document: {name} is invalid. {e}"),
+    for doc in Deserializer::from_str(&contents) {
+        let value = Value::deserialize(doc)?;
+
+        let (name, parsed_doc) = Document::parse(value, &file)?;
+        docs.insert(name, parsed_doc);
+    }
+
+    for (name, doc) in &docs {
+        match doc.validate(&format!("{}.{}", file, name), &docs) {
+            Ok(_) => println!("✅ Document: {name} is valid."),
+            Err(e) => eprintln!("🙅 Document: {name} is invalid. {e}"),
+        }
     }
 
     Ok(())
@@ -16,8 +30,19 @@ pub fn validate(file: String) -> ParserResult<()> {
 
 pub fn parse(file: String) -> ParserResult<()> {
     let contents = std::fs::read_to_string(&file)?;
-    let doc = Document::parse(&contents, &file)?;
-    println!("{}", serde_json::to_string_pretty(&doc)?);
+    let mut docs = HashMap::new();
+
+    for doc in Deserializer::from_str(&contents) {
+        let value = Value::deserialize(doc)?;
+
+        let (name, parsed_doc) = Document::parse(value, &file)?;
+        docs.insert(name, parsed_doc);
+    }
+
+    for (name, doc) in docs {
+        println!("{name}: {}", serde_json::to_string_pretty(&doc)?);
+    }
+
     Ok(())
 }
 

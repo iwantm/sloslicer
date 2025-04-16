@@ -1,6 +1,25 @@
 apiVersion: openslo/v1
 kind: AlertPolicy
 metadata:
+  name: low-priority
+  displayName: Low Priority
+  labels:
+    env:
+      - prod
+    team:
+      - team-a
+      - team-b
+spec:
+  description: Alert policy for low priority notifications, notifies on-call via email
+  alertWhenBreaching: true
+  conditions:
+    - conditionRef: cpu-usage-breach
+  notificationTargets:
+    - targetRef: on-call-mail-notification
+---
+apiVersion: openslo/v1
+kind: AlertPolicy
+metadata:
   name: high-priority
   displayName: High Priority
   annotations:
@@ -30,3 +49,100 @@ spec:
           alertAfter: 5m
   notificationTargets:
     - targetRef: on-call-pd-notification
+---
+apiVersion: openslo/v1
+kind: AlertPolicy
+metadata:
+  name: medium-priority
+  displayName: Medium Priority
+  labels:
+    env:
+      - prod
+    team:
+      - team-a
+      - team-b
+spec:
+  description: Alert policy for medium priority notifications, notifies on-call via slack
+  alertWhenBreaching: true
+  conditions:
+    - conditionRef: cpu-usage-breach
+  notificationTargets:
+    - kind: AlertNotificationTarget
+      metadata:
+        name: on-call-slack-notification
+      spec:
+        description: Sends Slack alert to the current on-call
+        target: slack
+---
+apiVersion: openslo/v1
+kind: AlertCondition
+metadata:
+  name: cpu-usage-breach
+  displayName: CPU usage breach
+  labels:
+    env:
+      - prod
+    team:
+      - team-a
+      - team-b
+spec:
+  description: If the CPU usage is too high for given period then it should alert
+  severity: page
+  condition:
+    kind: burnrate
+    op: lte
+    threshold: 2
+    lookbackWindow: 1h
+    alertAfter: 5m
+---
+apiVersion: openslo/v1
+kind: AlertCondition
+metadata:
+  name: latency-too-high
+  displayName: Latency too high
+  annotations:
+    openslo.com/service-folder: ./my/directory
+  labels:
+    env:
+      - prod
+    team:
+      - team-a
+      - team-b
+spec:
+  description: If the average latency is greater than 200ms for a given day, send a warning alert
+  severity: warning
+  condition:
+    kind: burnrate
+    op: gt
+    threshold: 200
+    lookbackWindow: 1d
+    alertAfter: 30m
+---
+apiVersion: openslo/v1
+kind: AlertNotificationTarget
+metadata:
+  labels:
+    env:
+      - prod
+      - dev
+    team:
+      - developers
+  name: devs-email-notification
+spec:
+  description: Notifies developers' mailing group
+  target: email
+---
+apiVersion: openslo/v1
+kind: AlertNotificationTarget
+metadata:
+  annotations:
+    openslo.com/service-folder: ./my/directory
+  labels:
+    env:
+      - prod
+    team:
+      - on-call
+  name: on-call-pd-notification
+spec:
+  description: Sends PagerDuty alert to the current on-call
+  target: pagerduty

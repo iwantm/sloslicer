@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::utils::errors::{ParserError, ParserResult};
 use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
 
 use super::api_version::v1::{
     alert_condition::{AlertConditionDoc, AlertConditionSpec},
@@ -106,8 +107,9 @@ impl TryFrom<RootDocument> for Document {
 }
 
 impl Document {
-    pub fn parse(yaml: &str, path: &str) -> ParserResult<(String, Self)> {
-        let root: RootDocument = serde_yaml::from_str(yaml)?;
+    pub fn parse(yaml: Value, path: &str) -> ParserResult<(String, Self)> {
+        let root: RootDocument = serde_yaml::from_value(yaml)?;
+
         if !root.api_version.ends_with("v1") {
             return Err(ParserError::Validation {
                 path: path.to_string(),
@@ -119,25 +121,16 @@ impl Document {
     }
 
     pub fn validate(
-        self,
+        &self,
         path: &str,
-        sli_map: Option<&HashMap<String, SLIDoc>>,
-        alert_policy_map: Option<&HashMap<String, AlertPolicyDoc>>,
-        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
+        document_map: &HashMap<String, Document>,
     ) -> ParserResult<()> {
         match self {
             Document::DataSource(data_source_doc) => data_source_doc.validate(Some(path)),
-            Document::Slo(slodoc) => slodoc.validate(
-                Some(path),
-                sli_map,
-                alert_policy_map,
-                condition_map,
-                notification_target_map,
-            ),
+            Document::Slo(slodoc) => slodoc.validate(Some(path), document_map),
             Document::Sli(slidoc) => slidoc.validate(false, Some(path)),
             Document::AlertPolicy(alert_policy_doc) => {
-                alert_policy_doc.validate(condition_map, notification_target_map, Some(path))
+                alert_policy_doc.validate(document_map, Some(path))
             }
             Document::AlertCondition(alert_condition_doc) => {
                 alert_condition_doc.validate(Some(path))

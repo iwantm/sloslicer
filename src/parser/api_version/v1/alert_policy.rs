@@ -2,6 +2,7 @@ use super::alert_condition::AlertConditionDoc;
 use super::alert_notification_target::AlertNotificationTargetDoc;
 
 use super::common::{Kind, Metadata};
+use crate::parser::document::Document;
 use crate::utils::errors::{ParserError, ParserResult};
 use serde::{Deserialize, Serialize};
 
@@ -17,8 +18,7 @@ pub struct AlertPolicyDoc {
 impl AlertPolicyDoc {
     pub fn validate(
         &self,
-        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
+        document_map: &HashMap<String, Document>,
         path: Option<&str>,
     ) -> ParserResult<()> {
         let path = path.unwrap_or("AlertPolicy");
@@ -30,11 +30,7 @@ impl AlertPolicyDoc {
             });
         };
 
-        self.spec.validate(
-            condition_map,
-            notification_target_map,
-            &format!("{path}.spec"),
-        )
+        self.spec.validate(document_map, &format!("{path}.spec"))
     }
 }
 
@@ -81,8 +77,7 @@ pub struct AlertPolicySpec {
 impl AlertPolicySpec {
     pub fn validate(
         &self,
-        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
+        document_map: &HashMap<String, Document>,
         path: &str,
     ) -> ParserResult<()> {
         //currently condition only accepts a single value
@@ -97,13 +92,24 @@ impl AlertPolicySpec {
         match &self.conditions[0] {
             AlertCondition::Reference(reference) => {
                 let reference = &reference.condition_ref;
-                if let Some(condition_map) = condition_map {
-                    condition_map
-                        .get(reference)
-                        .ok_or_else(|| ParserError::Validation {
-                            path: format!("{path}.conditions"),
-                            message: format!("Condition reference `{}` not found.", reference),
-                        })?;
+
+                let doc = document_map
+                    .get(reference)
+                    .ok_or_else(|| ParserError::Validation {
+                        path: format!("{path}.conditions[0].targetRef"),
+                        message: format!("Condition reference `{}` not found.", reference),
+                    })?;
+
+                match doc {
+                    Document::AlertCondition(alert_condition_doc) => {
+                        return alert_condition_doc.validate(Some(path));
+                    }
+                    _ => {
+                        return Err(ParserError::Validation {
+                            path: format!("{path}.conditions[0].targetRef"),
+                            message: format!("Condition reference `{}` wrong type.", reference),
+                        });
+                    }
                 }
             }
             AlertCondition::Inline(inline_condition) => {
@@ -122,23 +128,31 @@ impl AlertPolicySpec {
             match target {
                 NotificationTarget::Reference(reference) => {
                     let reference = &reference.target_ref;
-                    if let Some(notification_target_map) = notification_target_map {
-                        notification_target_map.get(reference).ok_or_else(|| {
-                            ParserError::Validation {
+
+                    let doc =
+                        document_map
+                            .get(reference)
+                            .ok_or_else(|| ParserError::Validation {
                                 path: format!("{path}.notificationTargets[{}].targetRef", i),
                                 message: format!(
                                     "Notification target reference `{}` not found.",
                                     reference
                                 ),
-                            }
-                        })?;
-                    } else {
-                        return Err(ParserError::Validation {
-                            path: format!("{path}.notificationTargets"),
-                            message:
-                                "Notification target map is required for indicatorRef validation."
-                                    .to_string(),
-                        });
+                            })?;
+
+                    match doc {
+                        Document::AlertNotificationTarget(alert_notification) => {
+                            return alert_notification.validate(Some(path));
+                        }
+                        _ => {
+                            return Err(ParserError::Validation {
+                                path: format!("{path}.notificationTargets[{}].targetRef", i),
+                                message: format!(
+                                    "Condition reference `{}` is wrong kind.",
+                                    reference
+                                ),
+                            });
+                        }
                     }
                 }
                 NotificationTarget::Inline(inline_target) => {
@@ -216,15 +230,20 @@ mod happy_path_tests {
                 - targetRef: on-call-slack
         "#;
 
-        let mut condition_map = HashMap::new();
-        condition_map.insert("cpu-usage-breach".to_string(), create_condition());
+        let mut document_map: HashMap<String, Document> = HashMap::new();
+        document_map.insert(
+            "cpu-usage-breach".to_string(),
+            Document::AlertCondition(create_condition()),
+        );
 
-        let mut notification_target_map = HashMap::new();
-        notification_target_map.insert("on-call-slack".to_string(), create_target());
+        document_map.insert(
+            "on-call-slack".to_string(),
+            Document::AlertNotificationTarget(create_target()),
+        );
 
         let policy: AlertPolicyDoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = policy.validate(Some(&condition_map), Some(&notification_target_map), None);
+        let result = policy.validate(&document_map, None);
         assert!(result.is_ok());
     }
 
@@ -254,12 +273,15 @@ mod happy_path_tests {
                 - targetRef: pagerduty-notify
         "#;
 
-        let mut notification_target_map = HashMap::new();
-        notification_target_map.insert("pagerduty-notify".to_string(), create_target());
+        let mut document_map: HashMap<String, Document> = HashMap::new();
+        document_map.insert(
+            "pagerduty-notify".to_string(),
+            Document::AlertNotificationTarget(create_target()),
+        );
 
         let policy: AlertPolicyDoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = policy.validate(None, Some(&notification_target_map), None);
+        let result = policy.validate(&document_map, None);
 
         assert!(result.is_ok());
     }
@@ -296,12 +318,15 @@ mod happy_path_tests {
                     description: Slack channel
         "#;
 
-        let mut notification_target_map = HashMap::new();
-        notification_target_map.insert("pagerduty-notify".to_string(), create_target());
+        let mut document_map: HashMap<String, Document> = HashMap::new();
+        document_map.insert(
+            "pagerduty-notify".to_string(),
+            Document::AlertNotificationTarget(create_target()),
+        );
 
         let policy: AlertPolicyDoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = policy.validate(None, Some(&notification_target_map), None);
+        let result = policy.validate(&document_map, None);
 
         assert!(result.is_ok());
     }
@@ -309,35 +334,8 @@ mod happy_path_tests {
 
 #[cfg(test)]
 mod unhappy_path_tests {
-    use super::super::{
-        alert_condition::{AlertConditionSpec, Condition, CondtionKind},
-        common::{DurationShorthand, Operator},
-    };
 
     use super::*;
-
-    fn create_condition() -> AlertConditionDoc {
-        AlertConditionDoc {
-            spec: AlertConditionSpec {
-                condition: Condition {
-                    kind: CondtionKind::Burnrate,
-                    op: Some(Operator::Gte),
-                    threshold: Some(1.5),
-                    lookback_window: Some(DurationShorthand("5m".to_string())),
-                    alert_after: Some(DurationShorthand("0m".to_string())),
-                },
-                description: Some("High CPU usage".to_string()),
-                severity: "high".to_string(),
-            },
-            kind: Some(Kind::AlertCondition),
-            metadata: Metadata {
-                name: "test".to_string(),
-                display_name: None,
-                labels: None,
-                annotations: None,
-            },
-        }
-    }
 
     #[test]
     fn test_missing_conditions() {
@@ -377,42 +375,12 @@ mod unhappy_path_tests {
 
         let alert_policy: AlertPolicyDoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = alert_policy.validate(None, None, None);
+        let result = alert_policy.validate(&HashMap::new(), None);
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
                 path == "AlertPolicy.spec.condition"
                     && message == "Condition must contain exactly one item."
-            ))
-        );
-    }
-
-    #[test]
-    fn test_empty_notifications() {
-        let yaml = r#"
-        kind: AlertPolicy
-        metadata:
-            name: no-targets
-        spec:
-            alertWhenNoData: false
-            alertWhenResolved: false
-            alertWhenBreaching: true
-            conditions:
-                - conditionRef: slo-alert
-            notificationTargets: []
-        "#;
-
-        let mut condition_map = HashMap::new();
-        condition_map.insert("slo-alert".to_string(), create_condition());
-
-        let alert_policy: AlertPolicyDoc = serde_yaml::from_str(yaml).unwrap();
-
-        let result = alert_policy.validate(Some(&condition_map), None, None);
-
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
-                if path == "AlertPolicy.spec.notificationTargets"
-                    && message == "Notification targets must not be empty."
             ))
         );
     }

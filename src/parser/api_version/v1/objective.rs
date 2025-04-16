@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use super::common::{BudgetingMethod, DurationShorthand, Operator};
 use super::sli::SLIDoc;
+use crate::parser::document::Document;
 use crate::utils::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize)]
@@ -136,7 +137,7 @@ impl Objective {
 
     fn validate_indicators(
         &self,
-        sli_map: Option<&HashMap<String, SLIDoc>>,
+        document_map: &HashMap<String, Document>,
         is_composite: bool,
         path: &str,
     ) -> ParserResult<()> {
@@ -169,27 +170,34 @@ impl Objective {
             }
 
             if let Some(indicator_ref) = &self.indicator_ref {
-                if let Some(sli_map) = sli_map {
-                    let indicator =
-                        sli_map
-                            .get(indicator_ref)
-                            .ok_or_else(|| ParserError::Validation {
-                                path: format!("{path}.indicatorRef"),
-                                message: format!(
-                                    "Indicator reference `{}` not found.",
-                                    indicator_ref
-                                ),
-                            })?;
+                let document =
+                    document_map
+                        .get(indicator_ref)
+                        .ok_or_else(|| ParserError::Validation {
+                            path: format!("{path}.indicatorRef"),
+                            message: format!("Indicator reference `{}` not found.", indicator_ref),
+                        })?;
 
-                    if indicator.spec.is_threshold_metric()
-                        && (self.op.is_none() || self.value.is_none())
-                    {
+                let indicator = match document {
+                    Document::Sli(slidoc) => slidoc,
+                    _ => {
                         return Err(ParserError::Validation {
-                            path: format!("{path}.indicator"),
-                            message: "op and value must be specified when using a thresholdMetric."
-                                .to_string(),
+                            path: format!("{path}.indicatorRef"),
+                            message: format!("Indicator reference `{}` wrong kind.", indicator_ref),
                         });
                     }
+                };
+
+                indicator.validate(false, Some(path))?;
+
+                if indicator.spec.is_threshold_metric()
+                    && (self.op.is_none() || self.value.is_none())
+                {
+                    return Err(ParserError::Validation {
+                        path: format!("{path}.indicator"),
+                        message: "op and value must be specified when using a thresholdMetric."
+                            .to_string(),
+                    });
                 }
             }
 
@@ -225,21 +233,14 @@ impl Objective {
     pub fn validate(
         &self,
         budgeting_method: &BudgetingMethod,
-        sli_map: Option<&HashMap<String, SLIDoc>>,
+        document_map: &HashMap<String, Document>,
         is_composite: bool,
         path: &str,
     ) -> ParserResult<()> {
         self.validate_target(path)?;
         self.validate_timeslice(budgeting_method, path)?;
         self.validate_operators(path)?;
-
-        if is_composite {
-            if let Some(sli_map) = sli_map {
-                self.validate_indicators(Some(sli_map), is_composite, path)?;
-            }
-        }
-
-        self.validate_indicators(None, is_composite, path)?;
+        self.validate_indicators(document_map, is_composite, path)?;
 
         Ok(())
     }
@@ -256,11 +257,11 @@ mod happy_path_tests {
 
     use super::*;
 
-    fn default_sli_map() -> HashMap<String, SLIDoc> {
-        let mut sli_map = HashMap::new();
-        sli_map.insert(
+    fn default_document_map() -> HashMap<String, Document> {
+        let mut document_map = HashMap::new();
+        document_map.insert(
             "threshold_metric".to_string(),
-            SLIDoc {
+            Document::Sli(SLIDoc {
                 spec: SLISpec {
                     threshold_metric: Some(ThresholdMetric {
                         metric_source: MetricSource {
@@ -279,12 +280,12 @@ mod happy_path_tests {
                     labels: None,
                     annotations: None,
                 },
-            },
+            }),
         );
 
-        sli_map.insert(
+        document_map.insert(
             "ratio_metric".to_string(),
-            SLIDoc {
+            Document::Sli(SLIDoc {
                 kind: Some(Kind::Sli),
                 metadata: Metadata {
                     name: "Test SLI".to_string(),
@@ -312,10 +313,10 @@ mod happy_path_tests {
                         raw: None,
                     }),
                 },
-            },
+            }),
         );
 
-        sli_map
+        document_map
     }
 
     #[test]
@@ -333,7 +334,12 @@ mod happy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            &HashMap::new(),
+            false,
+            "test_path",
+        );
 
         assert!(result.is_ok());
     }
@@ -353,10 +359,11 @@ mod happy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
+        let document_map = default_document_map();
+
         let result = objective.validate(
             &BudgetingMethod::Occurrences,
-            Some(&sli_map),
+            &document_map,
             true,
             "test_path",
         );
@@ -407,7 +414,13 @@ mod happy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(&BudgetingMethod::Occurrences, None, true, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            &HashMap::new(),
+            true,
+            "test_path",
+        );
+        println!("{:?}", result);
         assert!(result.is_ok());
     }
 
@@ -426,7 +439,12 @@ mod happy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            &HashMap::new(),
+            false,
+            "test_path",
+        );
 
         assert!(result.is_ok());
     }
@@ -442,11 +460,11 @@ mod unhappy_path_tests {
     };
     use super::*;
 
-    fn default_sli_map() -> HashMap<String, SLIDoc> {
-        let mut sli_map = HashMap::new();
-        sli_map.insert(
+    fn default_document_map() -> HashMap<String, Document> {
+        let mut document_map = HashMap::new();
+        document_map.insert(
             "threshold_metric".to_string(),
-            SLIDoc {
+            Document::Sli(SLIDoc {
                 spec: SLISpec {
                     threshold_metric: Some(ThresholdMetric {
                         metric_source: MetricSource {
@@ -465,12 +483,12 @@ mod unhappy_path_tests {
                     labels: None,
                     annotations: None,
                 },
-            },
+            }),
         );
 
-        sli_map.insert(
+        document_map.insert(
             "ratio_metric".to_string(),
-            SLIDoc {
+            Document::Sli(SLIDoc {
                 kind: Some(Kind::Sli),
                 metadata: Metadata {
                     name: "Test SLI".to_string(),
@@ -498,10 +516,10 @@ mod unhappy_path_tests {
                         raw: None,
                     }),
                 },
-            },
+            }),
         );
 
-        sli_map
+        document_map
     }
 
     #[test]
@@ -519,7 +537,12 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            &HashMap::new(),
+            false,
+            "test_path",
+        );
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
@@ -544,7 +567,12 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            &HashMap::new(),
+            false,
+            "test_path",
+        );
 
         assert!(result.is_err_and(
             |e| matches!(e, ParserError::Validation {path, message} if path == "test_path.target, test_path.targetPercent"
@@ -568,8 +596,12 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result =
-            objective.validate(&BudgetingMethod::RatioTimeslices, None, false, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::RatioTimeslices,
+            &HashMap::new(),
+            false,
+            "test_path",
+        );
 
         assert!(result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
             if path == "test_path.timeSliceTarget, test_path.timeSliceWindow" 
@@ -592,7 +624,12 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(&BudgetingMethod::Timeslices, None, false, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Timeslices,
+            &HashMap::new(),
+            false,
+            "test_path",
+        );
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
@@ -617,7 +654,12 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            &HashMap::new(),
+            false,
+            "test_path",
+        );
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
@@ -642,7 +684,12 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(&BudgetingMethod::Occurrences, None, true, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            &HashMap::new(),
+            true,
+            "test_path",
+        );
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
@@ -687,10 +734,10 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let sli_map = default_sli_map();
+        let document_map = default_document_map();
         let result = objective.validate(
             &BudgetingMethod::Occurrences,
-            Some(&sli_map),
+            &document_map,
             true,
             "test_path",
         );
@@ -718,10 +765,10 @@ mod unhappy_path_tests {
             composite_weight: Some(-1.0),
         };
 
-        let sli_map = default_sli_map();
+        let document_map = default_document_map();
         let result = objective.validate(
             &BudgetingMethod::Occurrences,
-            Some(&sli_map),
+            &document_map,
             true,
             "test_path",
         );
@@ -749,7 +796,12 @@ mod unhappy_path_tests {
             composite_weight: Some(1.0),
         };
 
-        let result = objective.validate(&BudgetingMethod::Occurrences, None, false, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            &HashMap::new(),
+            false,
+            "test_path",
+        );
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
@@ -793,7 +845,12 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(&BudgetingMethod::Occurrences, None, true, "test_path");
+        let result = objective.validate(
+            &BudgetingMethod::Occurrences,
+            &HashMap::new(),
+            true,
+            "test_path",
+        );
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }

@@ -1,12 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::alert_condition::AlertConditionDoc;
-use super::alert_notification_target::AlertNotificationTargetDoc;
 use super::alert_policy::AlertPolicyDoc;
 use super::common::{BudgetingMethod, DurationShorthand, Kind, Metadata};
 use super::objective::Objective;
 use super::sli::SLIDoc;
+use crate::parser::document::Document;
 use crate::utils::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -33,27 +32,18 @@ impl SLODoc {
     pub fn validate(
         &self,
         path: Option<&str>,
-        sli_map: Option<&HashMap<String, SLIDoc>>,
-        alert_policy_map: Option<&HashMap<String, AlertPolicyDoc>>,
-        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
+        document_map: &HashMap<String, Document>,
     ) -> ParserResult<()> {
         let path = path.unwrap_or("SLO");
 
-        if !matches!(self.kind, Some(Kind::Slo)) {
+        if self.kind.as_ref().is_some_and(|k| !matches!(k, Kind::Slo)) {
             return Err(ParserError::Validation {
                 path: format!("{path}.kind"),
                 message: "Expected kind to be SLO.".to_string(),
             });
-        };
+        }
 
-        self.spec.validate(
-            sli_map,
-            alert_policy_map,
-            condition_map,
-            notification_target_map,
-            &format!("{path}.spec"),
-        )
+        self.spec.validate(document_map, &format!("{path}.spec"))
     }
 }
 
@@ -103,7 +93,7 @@ impl SLOSpec {
     fn validate_indicators(
         &self,
         is_composite: bool,
-        sli_map: Option<&HashMap<String, SLIDoc>>,
+        document_map: &HashMap<String, Document>,
         path: &str,
     ) -> ParserResult<()> {
         if is_composite && (self.indicator.is_some() || self.indicator_ref.is_some()) {
@@ -129,28 +119,26 @@ impl SLOSpec {
                 (Some(indicator), None) => {
                     return indicator.validate(true, Some(&format!("{path}.indicator")));
                 }
-                (None, Some(indicator_ref)) => match sli_map {
-                    Some(sli_map) => {
-                        let _ =
-                            sli_map
-                                .get(indicator_ref)
-                                .ok_or_else(|| ParserError::Validation {
-                                    path: format!("{path}.indicatorRef"),
-                                    message: format!(
-                                        "Indicator reference `{}` not found.",
-                                        indicator_ref
-                                    ),
-                                })?;
+                (None, Some(indicator_ref)) => {
+                    let document =
+                        document_map
+                            .get(indicator_ref)
+                            .ok_or_else(|| ParserError::Validation {
+                                path: format!("{path}.indicatorRef"),
+                                message: format!(
+                                    "Indicator reference `{}` not found.",
+                                    indicator_ref
+                                ),
+                            })?;
 
-                        return Ok(());
-                    }
-                    None => {
-                        return Err(ParserError::Validation {
+                    let _ = match document {
+                        Document::Sli(slidoc) => slidoc.validate(false, Some(path)),
+                        _ => Err(ParserError::Validation {
                             path: format!("{path}.indicatorRef"),
-                            message: "SLI map is required for indicatorRef validation.".to_string(),
-                        });
-                    }
-                },
+                            message: format!("Indicator reference `{}` not found.", indicator_ref),
+                        }),
+                    };
+                }
             }
         }
         Ok(())
@@ -173,7 +161,7 @@ impl SLOSpec {
     fn validate_objectives(
         &self,
         is_composite: bool,
-        sli_map: Option<&HashMap<String, SLIDoc>>,
+        document_map: &HashMap<String, Document>,
         path: &str,
     ) -> ParserResult<()> {
         if !is_composite {
@@ -185,7 +173,7 @@ impl SLOSpec {
             }
             return self.objectives[0].validate(
                 &self.budgeting_method,
-                sli_map,
+                document_map,
                 is_composite,
                 path,
             );
@@ -194,7 +182,7 @@ impl SLOSpec {
         for (i, objective) in self.objectives.iter().enumerate() {
             objective.validate(
                 &self.budgeting_method,
-                sli_map,
+                document_map,
                 is_composite,
                 &format!("{path}.objectives[{}]", i),
             )?;
@@ -205,22 +193,17 @@ impl SLOSpec {
 
     fn validate_alert_policy(
         &self,
-        alert_policy_map: Option<&HashMap<String, AlertPolicyDoc>>,
-        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
+        document_map: &HashMap<String, Document>,
         path: &str,
     ) -> ParserResult<()> {
         if let Some(alert_policy) = &self.alert_policies {
             for (i, policy) in alert_policy.iter().enumerate() {
                 match policy {
-                    AlertPolicy::Inline(policy) => policy.validate(
-                        condition_map,
-                        notification_target_map,
-                        Some(&format!("{path}.alertPolicy[{}]", i)),
-                    )?,
+                    AlertPolicy::Inline(policy) => policy
+                        .validate(document_map, Some(&format!("{path}.alertPolicy[{}]", i)))?,
                     AlertPolicy::Reference(policy_ref) => {
-                        if let Some(alert_policy_map) = alert_policy_map {
-                            alert_policy_map
+                        let document =
+                            document_map
                                 .get(&policy_ref.alert_policy_ref)
                                 .ok_or_else(|| ParserError::Validation {
                                     path: format!("{path}.alertPolicy[{}]", i),
@@ -229,11 +212,20 @@ impl SLOSpec {
                                         policy_ref.alert_policy_ref
                                     ),
                                 })?;
-                        } else {
-                            return Err(ParserError::Validation {
-                                path: format!("{path}.alertPolicy[{}]", i),
-                                message: "Alert policy map is required for alert policy reference validation.".to_string(),
-                            });
+
+                        match document {
+                            Document::AlertPolicy(alert_policy_doc) => {
+                                let _ = alert_policy_doc.validate(document_map, Some(path));
+                            }
+                            _ => {
+                                return Err(ParserError::Validation {
+                                    path: format!("{path}.alertPolicy[{}]", i),
+                                    message: format!(
+                                        "Alert policy reference `{}` wrong kind.",
+                                        policy_ref.alert_policy_ref
+                                    ),
+                                });
+                            }
                         }
                     }
                 }
@@ -244,24 +236,16 @@ impl SLOSpec {
 
     pub fn validate(
         &self,
-        sli_map: Option<&HashMap<String, SLIDoc>>,
-        alert_policy_map: Option<&HashMap<String, AlertPolicyDoc>>,
-        condition_map: Option<&HashMap<String, AlertConditionDoc>>,
-        notification_target_map: Option<&HashMap<String, AlertNotificationTargetDoc>>,
+        document_map: &HashMap<String, Document>,
         path: &str,
     ) -> ParserResult<()> {
         let is_composite = self.is_composite();
         self.validate_service(path)?;
         self.validate_budgeting_method(path)?;
-        self.validate_indicators(is_composite, sli_map, path)?;
+        self.validate_indicators(is_composite, document_map, path)?;
         self.validate_time_window(path)?;
-        self.validate_objectives(is_composite, sli_map, path)?;
-        self.validate_alert_policy(
-            alert_policy_map,
-            condition_map,
-            notification_target_map,
-            path,
-        )?;
+        self.validate_objectives(is_composite, document_map, path)?;
+        self.validate_alert_policy(document_map, path)?;
         Ok(())
     }
 }
@@ -306,6 +290,10 @@ pub struct CalendarDetails {
 
 #[cfg(test)]
 mod happy_path_tests {
+    use crate::parser::api_version::v1::{
+        alert_condition::AlertConditionDoc, alert_notification_target::AlertNotificationTargetDoc,
+    };
+
     use super::super::{
         alert_condition::{AlertConditionSpec, Condition, CondtionKind},
         alert_notification_target::AlertNotificationTargetSpec,
@@ -351,7 +339,7 @@ mod happy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, None, None, None, None);
+        let result = slo.validate(None, &HashMap::new());
 
         assert!(result.is_ok(), "Expected valid SLO to pass validation");
     }
@@ -380,11 +368,11 @@ mod happy_path_tests {
         "#;
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
-        let mut sli_map = HashMap::new();
+        let mut document_map = HashMap::new();
 
-        sli_map.insert(
+        document_map.insert(
             "availability-sli".to_string(),
-            SLIDoc {
+            Document::Sli(SLIDoc {
                 kind: Some(Kind::Slo),
                 metadata: Metadata {
                     name: "availability-sli".to_string(),
@@ -404,10 +392,10 @@ mod happy_path_tests {
                     ratio_metric: None,
                     // Add other fields as necessary
                 },
-            },
+            }),
         );
 
-        let result = slo.validate(None, Some(&sli_map), None, None, None);
+        let result = slo.validate(None, &document_map);
 
         assert!(result.is_ok(), "Expected valid SLO to pass validation");
     }
@@ -438,12 +426,12 @@ mod happy_path_tests {
         "#;
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
-        let mut sli_map = HashMap::new();
+        let mut document_map = HashMap::new();
 
-        sli_map.insert(
+        document_map.insert(
             "slo-2".to_string(),
-            SLIDoc {
-                kind: Some(Kind::Slo),
+            Document::Sli(SLIDoc {
+                kind: Some(Kind::Sli),
                 metadata: Metadata {
                     name: "availability-sli".to_string(),
                     display_name: None,
@@ -466,13 +454,13 @@ mod happy_path_tests {
                         }),
                     }),
                 },
-            },
+            }),
         );
 
-        sli_map.insert(
+        document_map.insert(
             "slo-1".to_string(),
-            SLIDoc {
-                kind: Some(Kind::Slo),
+            Document::Sli(SLIDoc {
+                kind: Some(Kind::Sli),
                 metadata: Metadata {
                     name: "availability-sli".to_string(),
                     display_name: None,
@@ -499,10 +487,11 @@ mod happy_path_tests {
                         raw: None,
                     }),
                 },
-            },
+            }),
         );
 
-        let result = slo.validate(None, Some(&sli_map), None, None, None);
+        let result = slo.validate(None, &document_map);
+        println!("{:?}", result);
 
         assert!(result.is_ok(), "Expected valid SLO to pass validation");
     }
@@ -527,12 +516,11 @@ mod happy_path_tests {
         "#;
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
-        let mut sli_map = HashMap::new();
-        let mut alert_policy_map = HashMap::new();
+        let mut document_map = HashMap::new();
 
-        sli_map.insert(
+        document_map.insert(
             "error-rate-sli".to_string(),
-            SLIDoc {
+            Document::Sli(SLIDoc {
                 kind: Some(Kind::Slo),
                 metadata: Metadata {
                     name: "availability-sli".to_string(),
@@ -552,12 +540,12 @@ mod happy_path_tests {
                     ratio_metric: None,
                     // Add other fields as necessary
                 },
-            },
+            }),
         );
 
-        alert_policy_map.insert(
+        document_map.insert(
             "high-error-rate-alert".to_string(),
-            AlertPolicyDoc {
+            Document::AlertPolicy(AlertPolicyDoc {
                 kind: Some(Kind::AlertPolicy),
                 metadata: Metadata {
                     name: "high-error-rate-alert".to_string(),
@@ -606,10 +594,10 @@ mod happy_path_tests {
                         },
                     )],
                 },
-            },
+            }),
         );
 
-        let result = slo.validate(None, Some(&sli_map), Some(&alert_policy_map), None, None);
+        let result = slo.validate(None, &document_map);
 
         assert!(result.is_ok(), "Expected valid SLO to pass validation");
     }
@@ -676,7 +664,7 @@ mod happy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, None, None, None, None);
+        let result = slo.validate(None, &HashMap::new());
 
         assert!(result.is_ok(), "Expected valid SLO to pass validation");
     }
@@ -703,7 +691,7 @@ mod unhappy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, None, None, None, None);
+        let result = slo.validate(None, &HashMap::new());
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
@@ -747,7 +735,7 @@ mod unhappy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, None, None, None, None);
+        let result = slo.validate(None, &HashMap::new());
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
@@ -792,7 +780,7 @@ mod unhappy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, None, Some(&HashMap::new()), None, None);
+        let result = slo.validate(None, &HashMap::new());
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
@@ -819,7 +807,7 @@ mod unhappy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, Some(&HashMap::new()), None, None, None);
+        let result = slo.validate(None, &HashMap::new());
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
@@ -872,7 +860,7 @@ mod unhappy_path_tests {
 
         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = slo.validate(None, Some(&HashMap::new()), None, None, None);
+        let result = slo.validate(None, &HashMap::new());
 
         assert!(
             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
