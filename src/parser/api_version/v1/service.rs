@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::common::{Kind, Metadata};
-use crate::utils::errors::ParserResult;
+use crate::utils::errors::{ParserError, ParserResult};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct ServiceDoc {
@@ -17,6 +17,13 @@ pub struct ServiceSpec {
 
 impl ServiceDoc {
     pub fn validate(&self, path: &str) -> ParserResult<()> {
+        if !matches!(self.kind, Some(Kind::Service)) {
+            return Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "Expected kind to be Service.".to_string(),
+            });
+        };
+
         Ok(())
     }
 }

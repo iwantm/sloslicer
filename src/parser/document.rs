@@ -106,7 +106,7 @@ impl TryFrom<RootDocument> for Document {
 }
 
 impl Document {
-    pub fn parse(yaml: &str, path: &str) -> ParserResult<Self> {
+    pub fn parse(yaml: &str, path: &str) -> ParserResult<(String, Self)> {
         let root: RootDocument = serde_yaml::from_str(yaml)?;
         if !root.api_version.ends_with("v1") {
             return Err(ParserError::Validation {
@@ -115,7 +115,7 @@ impl Document {
             });
         }
 
-        Document::try_from(root)
+        Ok((root.metadata.name.clone(), Document::try_from(root)?))
     }
 
     pub fn validate(

@@ -23,6 +23,13 @@ impl DataSourceDoc {
     pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
         let path = path.unwrap_or("DataSource");
 
+        if !matches!(self.kind, Some(Kind::DataSource)) {
+            return Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "Expected kind to be DataSource.".to_string(),
+            });
+        };
+
         if self.spec.type_.trim().is_empty() {
             return Err(ParserError::Validation {
                 path: format!("{path}.spec.type"),

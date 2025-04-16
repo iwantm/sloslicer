@@ -13,6 +13,12 @@ pub struct SLIDoc {
 impl SLIDoc {
     pub fn validate(&self, is_inline: bool, path: Option<&str>) -> ParserResult<()> {
         let path = path.unwrap_or("SLI");
+        if !matches!(self.kind, Some(Kind::Sli)) {
+            return Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "Expected kind to be SLI.".to_string(),
+            });
+        };
 
         if is_inline && self.kind.is_some() {
             return Err(ParserError::Validation {

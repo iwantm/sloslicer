@@ -40,6 +40,13 @@ impl SLODoc {
     ) -> ParserResult<()> {
         let path = path.unwrap_or("SLO");
 
+        if !matches!(self.kind, Some(Kind::Slo)) {
+            return Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "Expected kind to be SLO.".to_string(),
+            });
+        };
+
         self.spec.validate(
             sli_map,
             alert_policy_map,

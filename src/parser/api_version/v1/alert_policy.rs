@@ -23,6 +23,13 @@ impl AlertPolicyDoc {
     ) -> ParserResult<()> {
         let path = path.unwrap_or("AlertPolicy");
 
+        if !matches!(self.kind, Some(Kind::AlertPolicy)) {
+            return Err(ParserError::Validation {
+                path: format!("{path}.kind"),
+                message: "Expected kind to be AlertPolicy.".to_string(),
+            });
+        };
+
         self.spec.validate(
             condition_map,
             notification_target_map,

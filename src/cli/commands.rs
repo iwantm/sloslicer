@@ -3,10 +3,14 @@ use crate::utils::errors::ParserResult;
 
 pub fn validate(file: String) -> ParserResult<()> {
     let contents = std::fs::read_to_string(&file)?;
-    println!("{}", contents);
-    let doc = Document::parse(&contents, &file)?;
-    doc.validate("<root>", None, None, None, None)?;
-    println!("✅ Document is valid.");
+
+    let (name, doc) = Document::parse(&contents, &file)?;
+
+    match doc.validate(&file, None, None, None, None) {
+        Ok(_) => println!("✅ Document: {name} is valid."),
+        Err(e) => eprintln!("🙅 Document: {name} is invalid. {e}"),
+    }
+
     Ok(())
 }
 
