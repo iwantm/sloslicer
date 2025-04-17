@@ -1,67 +1,95 @@
 use std::collections::HashMap;
 
-use owo_colors::OwoColorize;
 use serde::Deserialize;
 use serde_yaml::{Deserializer, Value};
 
 use crate::parser::document::Document;
-use crate::utils::errors::ParserResult;
-use crate::utils::validation_context::ValidationContext;
+use crate::utils::errors::{ParserError, ParserResult};
+use crate::utils::validation_context::{ValidationContext, ValidationResult};
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
-pub fn validate(file: String) -> ParserResult<()> {
-    let contents = std::fs::read_to_string(&file)?;
+fn find_documents(path_string: &str, recursive: bool) -> ParserResult<Vec<PathBuf>> {
+    let path = Path::new(&path_string);
+    let mut files = vec![];
 
+    if path.is_file() {
+        files.push(path.to_path_buf());
+    } else if path.is_dir() {
+        let walker = if recursive {
+            WalkDir::new(path).into_iter()
+        } else {
+            WalkDir::new(path).max_depth(1).into_iter()
+        };
+
+        let files_iter = walker.filter_map(|entry| {
+            entry
+                .ok()
+                .and_then(|e| if e.path().is_file() { Some(e) } else { None })
+        });
+
+        for file in files_iter {
+            let extension = file.path().extension().and_then(|e| e.to_str());
+
+            if matches!(extension, Some("yaml" | "yml")) {
+                files.push(file.path().to_path_buf());
+            }
+        }
+    } else {
+        return Err(ParserError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("No such file or directory: {}", path_string),
+        )));
+    }
+
+    Ok(files)
+}
+
+pub fn parse_files(file: &PathBuf) -> ParserResult<(ValidationResult, HashMap<String, Document>)> {
     let mut docs = HashMap::new();
+
+    let contents = std::fs::read_to_string(file)?;
+    let path_string = match file.as_path().to_str() {
+        Some(path_string) => path_string,
+        None => {
+            return Err(ParserError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Couldn't parse path string.".to_string(),
+            )));
+        }
+    };
+
+    let validation_result = ValidationResult::new(path_string.to_string());
 
     for doc in Deserializer::from_str(&contents) {
         let value = Value::deserialize(doc)?;
 
-        let (name, parsed_doc) = Document::parse(value, &file)?;
+        let (name, parsed_doc) = Document::parse(value, path_string)?;
         docs.insert(name, parsed_doc);
     }
 
-    let mut invalid = 0;
-    let mut valid = 0;
+    Ok((validation_result, docs))
+}
 
-    for (name, doc) in &docs {
-        let mut ctx = ValidationContext::new();
-        doc.validate(&docs, &mut ctx);
-        match ctx.result() {
-            Ok(_) => {
-                valid += 1;
-                println!("[✅] {}.{} - {}", file, name, "Valid".green())
-            }
-            Err(e) => {
-                invalid += 1;
-                eprintln!("[🙅] {}.{} - {}", file, name, "Invalid".red());
-                for e in e {
-                    eprintln!("↪ {}", e)
+pub fn validate(path_string: String, recursive: bool) -> ParserResult<()> {
+    let files: Vec<PathBuf> = find_documents(&path_string, recursive)?;
+
+    for file in &files {
+        let (mut result, docs) = parse_files(file)?;
+
+        for (name, doc) in &docs {
+            let mut ctx = ValidationContext::new();
+            doc.validate(&docs, &mut ctx);
+            match ctx.result() {
+                Ok(_) => {
+                    result.add_valid(name);
+                }
+                Err(e) => {
+                    result.add_invalid(name, e);
                 }
             }
         }
-    }
-
-    println!(
-        "\nValidation Summary: \nValid: {}\nInvalid: {}",
-        valid, invalid
-    );
-
-    Ok(())
-}
-
-pub fn parse(file: String) -> ParserResult<()> {
-    let contents = std::fs::read_to_string(&file)?;
-    let mut docs = HashMap::new();
-
-    for doc in Deserializer::from_str(&contents) {
-        let value = Value::deserialize(doc)?;
-
-        let (name, parsed_doc) = Document::parse(value, &file)?;
-        docs.insert(name, parsed_doc);
-    }
-
-    for (name, doc) in docs {
-        println!("{name}: {}", serde_json::to_string_pretty(&doc)?);
+        println!("{}", result)
     }
 
     Ok(())
@@ -69,6 +97,9 @@ pub fn parse(file: String) -> ParserResult<()> {
 
 #[derive(clap::Subcommand)]
 pub enum Commands {
-    Validate { file: String },
-    Parse { file: String },
+    Validate {
+        file: String,
+        #[clap(long)]
+        recursive: bool,
+    },
 }
