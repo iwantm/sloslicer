@@ -1,7 +1,7 @@
 use super::common::{DurationShorthand, Kind, Metadata, Operator};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::errors::{ParserError, ParserResult};
+use crate::utils::{errors::ParserError, validation_context::ValidationContext};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertConditionDoc {
@@ -11,17 +11,17 @@ pub struct AlertConditionDoc {
 }
 
 impl AlertConditionDoc {
-    pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
-        let path = path.unwrap_or("AlertCondition");
+    pub fn validate(&self, path: Option<&str>, ctx: &mut ValidationContext) {
+        let path = path.unwrap_or("");
 
         if !matches!(self.kind, Some(Kind::AlertCondition)) {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.kind"),
                 message: "Expected kind to be AlertCondition.".to_string(),
             });
         }
 
-        self.spec.validate(&format!("{path}.spec"))
+        self.spec.validate(&format!("{path}.spec"), ctx);
     }
 }
 
@@ -45,11 +45,11 @@ pub struct Condition {
 }
 
 impl Condition {
-    pub fn validate(&self, path: &str) -> ParserResult<()> {
+    pub fn validate(&self, path: &str, ctx: &mut ValidationContext) {
         let path = format!("{path}.condition");
 
         if matches!(self.op, Some(Operator::Invalid)) {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.op"),
                 message: "Invalid operator specified.".to_string(),
             });
@@ -57,34 +57,32 @@ impl Condition {
 
         if matches!(self.kind, CondtionKind::Burnrate) {
             if self.op.is_none() {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.op"),
                     message: "Operator must be specified for burnrate condition.".to_string(),
                 });
             }
 
             if self.threshold.is_none() {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.threshold"),
                     message: "Threshold must be specified for burnrate condition.".to_string(),
                 });
             }
             if self.lookback_window.is_none() {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.lookbackWindow"),
                     message: "lookbackWindow must be specified for burnrate condition.".to_string(),
                 });
             }
             if self.alert_after.is_none() {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.alertAfter"),
                     message: "alertAfter must be specified for burnrate condition.".to_string(),
                 });
             }
-
-            Ok(())
         } else {
-            Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.kind"),
                 message: "Unsupported condition kind.".to_string(),
             })
@@ -133,20 +131,21 @@ pub struct AlertConditionSpec {
 }
 
 impl AlertConditionSpec {
-    pub fn validate(&self, path: &str) -> ParserResult<()> {
+    pub fn validate(&self, path: &str, ctx: &mut ValidationContext) {
         if self.severity.trim().is_empty() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.severity"),
                 message: "Severity must be a non-empty string.".to_string(),
             });
         }
 
-        self.condition.validate(path)
+        self.condition.validate(path, ctx)
     }
 }
 
 #[cfg(test)]
 mod happy_path_tests {
+
     use super::*;
 
     #[test]
@@ -186,11 +185,13 @@ mod happy_path_tests {
         };
 
         let alert_condition: AlertConditionDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = alert_condition.validate(Some("test"));
+        alert_condition.validate(Some("test"), &mut validation_context);
+
+        assert!(validation_context.result().is_ok());
 
         assert!(expected == alert_condition);
-        assert!(result.is_ok());
     }
 
     #[test]
@@ -232,10 +233,11 @@ mod happy_path_tests {
         };
 
         let alert_condition: AlertConditionDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = alert_condition.validate(None);
+        alert_condition.validate(None, &mut validation_context);
         assert!(expected == alert_condition);
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 }
 
@@ -280,9 +282,11 @@ mod unhappy_path_tests {
 
         let alert_condition: AlertConditionDoc = serde_yaml::from_str(yaml).unwrap();
 
-        let validation_result = alert_condition.validate(None);
-        assert!(validation_result.is_err_and(
-            |e| matches!(e, ParserError::Validation { path, message }
+        let mut validation_context = ValidationContext::new();
+        alert_condition.validate(None, &mut validation_context);
+
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
             if path == "AlertCondition.spec.condition.op"
                 && message == "Operator must be specified for burnrate condition.")
         ));
@@ -305,11 +309,11 @@ mod unhappy_path_tests {
 
         let alert_condition: AlertConditionDoc = serde_yaml::from_str(yaml).unwrap();
 
-        let validation_result = alert_condition.validate(None);
-        print!("validation_result: {:?}", validation_result);
+        let mut validation_context = ValidationContext::new();
+        alert_condition.validate(None, &mut validation_context);
 
         assert!(
-            validation_result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+            validation_context.result().is_err_and(|e| matches!(&e[0], ParserError::Validation { path, message }
             if path == "AlertCondition.spec.condition.op" && message == "Invalid operator specified."))
         );
     }

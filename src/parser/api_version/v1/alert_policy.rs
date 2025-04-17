@@ -3,7 +3,8 @@ use super::alert_notification_target::AlertNotificationTargetDoc;
 
 use super::common::{Kind, Metadata};
 use crate::parser::document::Document;
-use crate::utils::errors::{ParserError, ParserResult};
+use crate::utils::errors::ParserError;
+use crate::utils::validation_context::ValidationContext;
 use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
@@ -18,19 +19,21 @@ pub struct AlertPolicyDoc {
 impl AlertPolicyDoc {
     pub fn validate(
         &self,
-        document_map: &HashMap<String, Document>,
         path: Option<&str>,
-    ) -> ParserResult<()> {
-        let path = path.unwrap_or("AlertPolicy");
+        document_map: &HashMap<String, Document>,
+        ctx: &mut ValidationContext,
+    ) {
+        let path = path.unwrap_or("");
 
         if !matches!(self.kind, Some(Kind::AlertPolicy)) {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.kind"),
                 message: "Expected kind to be AlertPolicy.".to_string(),
             });
         };
 
-        self.spec.validate(document_map, &format!("{path}.spec"))
+        self.spec
+            .validate(&format!("{path}.spec"), document_map, ctx);
     }
 }
 
@@ -77,13 +80,14 @@ pub struct AlertPolicySpec {
 impl AlertPolicySpec {
     pub fn validate(
         &self,
-        document_map: &HashMap<String, Document>,
         path: &str,
-    ) -> ParserResult<()> {
+        document_map: &HashMap<String, Document>,
+        ctx: &mut ValidationContext,
+    ) {
         //currently condition only accepts a single value
 
         if self.conditions.len() != 1 {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.condition"),
                 message: "Condition must contain exactly one item.".to_string(),
             });
@@ -93,32 +97,32 @@ impl AlertPolicySpec {
             AlertCondition::Reference(reference) => {
                 let reference = &reference.condition_ref;
 
-                let doc = document_map
-                    .get(reference)
-                    .ok_or_else(|| ParserError::Validation {
+                if let Some(document) = document_map.get(reference) {
+                    match document {
+                        Document::AlertCondition(alert_condition_doc) => {
+                            alert_condition_doc.validate(Some(path), ctx);
+                        }
+                        _ => {
+                            ctx.push(ParserError::Validation {
+                                path: format!("{path}.conditions[0].targetRef"),
+                                message: format!("Condition reference `{}` wrong type.", reference),
+                            });
+                        }
+                    }
+                } else {
+                    ctx.push(ParserError::Validation {
                         path: format!("{path}.conditions[0].targetRef"),
                         message: format!("Condition reference `{}` not found.", reference),
-                    })?;
-
-                match doc {
-                    Document::AlertCondition(alert_condition_doc) => {
-                        return alert_condition_doc.validate(Some(path));
-                    }
-                    _ => {
-                        return Err(ParserError::Validation {
-                            path: format!("{path}.conditions[0].targetRef"),
-                            message: format!("Condition reference `{}` wrong type.", reference),
-                        });
-                    }
+                    });
                 }
             }
             AlertCondition::Inline(inline_condition) => {
-                inline_condition.validate(Some(path))?;
+                inline_condition.validate(Some(&format!("{}.conditions.[0]", path)), ctx);
             }
         }
 
         if self.notification_targets.is_empty() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.notificationTargets"),
                 message: "Notification targets must not be empty.".to_string(),
             });
@@ -129,41 +133,38 @@ impl AlertPolicySpec {
                 NotificationTarget::Reference(reference) => {
                     let reference = &reference.target_ref;
 
-                    let doc =
-                        document_map
-                            .get(reference)
-                            .ok_or_else(|| ParserError::Validation {
-                                path: format!("{path}.notificationTargets[{}].targetRef", i),
-                                message: format!(
-                                    "Notification target reference `{}` not found.",
-                                    reference
-                                ),
-                            })?;
-
-                    match doc {
-                        Document::AlertNotificationTarget(alert_notification) => {
-                            return alert_notification.validate(Some(path));
+                    if let Some(document) = document_map.get(reference) {
+                        match document {
+                            Document::AlertNotificationTarget(alert_notification) => {
+                                alert_notification.validate(Some(path), ctx);
+                            }
+                            _ => {
+                                ctx.push(ParserError::Validation {
+                                    path: format!("{path}.notificationTargets[{}].targetRef", i),
+                                    message: format!(
+                                        "Condition reference `{}` is wrong kind.",
+                                        reference
+                                    ),
+                                });
+                            }
                         }
-                        _ => {
-                            return Err(ParserError::Validation {
-                                path: format!("{path}.notificationTargets[{}].targetRef", i),
-                                message: format!(
-                                    "Condition reference `{}` is wrong kind.",
-                                    reference
-                                ),
-                            });
-                        }
+                    } else {
+                        ctx.push(ParserError::Validation {
+                            path: format!("{path}.notificationTargets[{}].targetRef", i),
+                            message: format!(
+                                "Notification target reference `{}` not found.",
+                                reference
+                            ),
+                        });
                     }
                 }
                 NotificationTarget::Inline(inline_target) => {
                     inline_target
                         .spec
-                        .validate(&format!("{path}.notificationTargets[{}]", i))?;
+                        .validate(&format!("{path}.notificationTargets[{}]", i), ctx);
                 }
             }
         }
-
-        Ok(())
     }
 }
 
@@ -243,8 +244,10 @@ mod happy_path_tests {
 
         let policy: AlertPolicyDoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = policy.validate(&document_map, None);
-        assert!(result.is_ok());
+        let mut validation_context = ValidationContext::new();
+        policy.validate(None, &document_map, &mut validation_context);
+
+        assert!(validation_context.result().is_ok());
     }
 
     #[test]
@@ -281,9 +284,10 @@ mod happy_path_tests {
 
         let policy: AlertPolicyDoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = policy.validate(&document_map, None);
+        let mut validation_context = ValidationContext::new();
+        policy.validate(None, &document_map, &mut validation_context);
 
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 
     #[test]
@@ -326,9 +330,10 @@ mod happy_path_tests {
 
         let policy: AlertPolicyDoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = policy.validate(&document_map, None);
+        let mut validation_context = ValidationContext::new();
+        policy.validate(None, &document_map, &mut validation_context);
 
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 }
 
@@ -375,13 +380,14 @@ mod unhappy_path_tests {
 
         let alert_policy: AlertPolicyDoc = serde_yaml::from_str(yaml).unwrap();
 
-        let result = alert_policy.validate(&HashMap::new(), None);
+        let mut validation_context = ValidationContext::new();
+        alert_policy.validate(None, &HashMap::new(), &mut validation_context);
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message } if
                 path == "AlertPolicy.spec.condition"
                     && message == "Condition must contain exactly one item."
-            ))
-        );
+            )
+        ));
     }
 }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::common::{Kind, Metadata};
-use crate::utils::errors::{ParserError, ParserResult};
+use crate::utils::{errors::ParserError, validation_context::ValidationContext};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct AlertNotificationTargetDoc {
@@ -11,17 +11,17 @@ pub struct AlertNotificationTargetDoc {
 }
 
 impl AlertNotificationTargetDoc {
-    pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
-        let path = path.unwrap_or("AlertNotificationTarget");
+    pub fn validate(&self, path: Option<&str>, ctx: &mut ValidationContext) {
+        let path = path.unwrap_or("");
 
         if !matches!(self.kind, Some(Kind::AlertNotificationTarget)) {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.kind"),
                 message: "Expected kind to be AlertNotificationTarget.".to_string(),
             });
         };
 
-        self.spec.validate(&format!("{path}.spec"))
+        self.spec.validate(&format!("{path}.spec"), ctx);
     }
 }
 
@@ -32,14 +32,13 @@ pub struct AlertNotificationTargetSpec {
 }
 
 impl AlertNotificationTargetSpec {
-    pub fn validate(&self, path: &str) -> ParserResult<()> {
+    pub fn validate(&self, path: &str, ctx: &mut ValidationContext) {
         if self.target.is_empty() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.target"),
                 message: "Target must not be empty.".to_string(),
             });
         }
-        Ok(())
     }
 }
 
@@ -80,11 +79,12 @@ mod happy_path_tests {
         "#;
 
         let alert_condition: AlertNotificationTargetDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = alert_condition.validate(None);
+        alert_condition.validate(None, &mut validation_context);
 
         assert!(expected == alert_condition);
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 
     #[test]
@@ -113,10 +113,11 @@ mod happy_path_tests {
         "#;
 
         let alert_condition: AlertNotificationTargetDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = alert_condition.validate(None);
+        alert_condition.validate(None, &mut validation_context);
 
         assert!(expected == alert_condition);
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 }

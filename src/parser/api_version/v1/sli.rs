@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::common::{Kind, Metadata};
-use crate::utils::errors::{ParserError, ParserResult};
+use crate::utils::{errors::ParserError, validation_context::ValidationContext};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct SLIDoc {
@@ -11,24 +11,24 @@ pub struct SLIDoc {
 }
 
 impl SLIDoc {
-    pub fn validate(&self, is_inline: bool, path: Option<&str>) -> ParserResult<()> {
-        let path = path.unwrap_or("SLI");
+    pub fn validate(&self, path: Option<&str>, is_inline: bool, ctx: &mut ValidationContext) {
+        let path = path.unwrap_or("");
 
         if self.kind.as_ref().is_some_and(|k| !matches!(k, Kind::Sli)) {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.kind"),
                 message: "Expected kind to be SLI.".to_string(),
             });
         }
 
         if is_inline && self.kind.is_some() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.kind"),
                 message: "Inline SLI must not have a kind.".to_string(),
             });
         }
 
-        self.spec.validate(&format!("{path}.spec"))
+        self.spec.validate(&format!("{path}.spec"), ctx);
     }
 }
 
@@ -46,30 +46,28 @@ impl SLISpec {
         self.threshold_metric.is_some()
     }
 
-    pub fn validate(&self, path: &str) -> ParserResult<()> {
+    pub fn validate(&self, path: &str, ctx: &mut ValidationContext) {
         if self.threshold_metric.is_some() && self.ratio_metric.is_some() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.thresholdMetric, {path}.ratioMetric"),
                 message: "Cannot specify both thresholdMetric and ratioMetric.".to_string(),
             });
         }
 
         if self.threshold_metric.is_none() && self.ratio_metric.is_none() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.thresholdMetric, {path}.ratioMetric"),
                 message: "Must specify either thresholdMetric or ratioMetric.".to_string(),
             });
         }
 
         if let Some(threshold_metric) = &self.threshold_metric {
-            threshold_metric.validate(&format!("{path}.ratioMetric"))?;
+            threshold_metric.validate(&format!("{path}.ratioMetric"), ctx);
         }
 
         if let Some(ratio_metric) = &self.ratio_metric {
-            ratio_metric.validate(&format!("{path}.ratioMetric"))?;
+            ratio_metric.validate(&format!("{path}.ratioMetric"), ctx);
         }
-
-        Ok(())
     }
 }
 
@@ -80,10 +78,9 @@ pub struct ThresholdMetric {
 }
 
 impl ThresholdMetric {
-    pub fn validate(&self, path: &str) -> ParserResult<()> {
+    pub fn validate(&self, path: &str, ctx: &mut ValidationContext) {
         self.metric_source
-            .validate(&format!("{path}.metricSource"))?;
-        Ok(())
+            .validate(&format!("{path}.metricSource"), ctx);
     }
 }
 
@@ -99,38 +96,38 @@ pub struct RatioMetric {
 }
 
 impl RatioMetric {
-    pub fn validate(&self, path: &str) -> ParserResult<()> {
+    pub fn validate(&self, path: &str, ctx: &mut ValidationContext) {
         if self.raw.is_some() && (self.good.is_some() || self.bad.is_some() || self.total.is_some())
         {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.raw"),
                 message: "Cannot specify raw with good, bad, or total.".to_string(),
             });
         }
 
         if self.good.is_some() && self.bad.is_some() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.good, {path}.bad"),
                 message: "Cannot specify both good and bad.".to_string(),
             });
         }
 
         if (self.good.is_some() || self.bad.is_some()) && self.total.is_none() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.total"),
                 message: "Must specify total when using good or bad.".to_string(),
             });
         }
 
         if self.total.is_some() && (self.good.is_none() && self.bad.is_none()) {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.total"),
                 message: "Must specify good or bad when using total.".to_string(),
             });
         }
 
         if self.raw.is_some() && self.raw_type.is_none() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.rawType"),
                 message: "Must specify rawType when using raw.".to_string(),
             });
@@ -139,8 +136,6 @@ impl RatioMetric {
         if self.raw.is_some() && self.counter.is_some() {
             println!("Counter ignored when using raw.") // replace with warning later.
         }
-
-        Ok(())
     }
 }
 
@@ -154,14 +149,13 @@ pub struct MetricSource {
 }
 
 impl MetricSource {
-    pub fn validate(&self, path: &str) -> ParserResult<()> {
+    pub fn validate(&self, path: &str, ctx: &mut ValidationContext) {
         if self.metric_source_ref.is_none() && self.type_.is_none() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.metricSourceRef"),
                 message: "Must specify one of type or metricSourceRef.".to_string(),
             });
         }
-        Ok(())
     }
 }
 
@@ -193,10 +187,11 @@ mod happy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(false, None);
+        sli.validate(None, false, &mut validation_context);
 
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 
     #[test]
@@ -213,10 +208,11 @@ mod happy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(true, None);
+        sli.validate(None, true, &mut validation_context);
 
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 
     #[test]
@@ -240,10 +236,11 @@ mod happy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(true, None);
+        sli.validate(None, true, &mut validation_context);
 
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 
     #[test]
@@ -265,10 +262,11 @@ mod happy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(true, None);
+        sli.validate(None, true, &mut validation_context);
 
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 
     #[test]
@@ -287,9 +285,10 @@ mod happy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(true, None);
-        assert!(result.is_ok());
+        sli.validate(None, true, &mut validation_context);
+        assert!(validation_context.result().is_ok());
     }
 }
 
@@ -308,14 +307,16 @@ mod unhappy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(false, None);
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        sli.validate(None, false, &mut validation_context);
+
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "SLI.spec.thresholdMetric, SLI.spec.ratioMetric"
                     && message == "Must specify either thresholdMetric or ratioMetric."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -340,14 +341,16 @@ mod unhappy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(false, None);
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        sli.validate(None, false, &mut validation_context);
+
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "SLI.spec.thresholdMetric, SLI.spec.ratioMetric"
                     && message == "Cannot specify both thresholdMetric and ratioMetric."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -370,15 +373,16 @@ mod unhappy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(false, None);
+        sli.validate(None, false, &mut validation_context);
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
             if path == "SLI.spec.ratioMetric.good, SLI.spec.ratioMetric.bad"
                     && message == "Cannot specify both good and bad."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -395,15 +399,16 @@ mod unhappy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(false, None);
+        sli.validate(None, false, &mut validation_context);
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "SLI.spec.ratioMetric.total"
                     && message == "Must specify total when using good or bad."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -420,15 +425,16 @@ mod unhappy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(false, None);
+        sli.validate(None, false, &mut validation_context);
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "SLI.spec.ratioMetric.total"
                     && message == "Must specify good or bad when using total."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -445,15 +451,16 @@ mod unhappy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(false, None);
+        sli.validate(None, false, &mut validation_context);
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "SLI.spec.ratioMetric.rawType"
                     && message == "Must specify rawType when using raw."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -474,14 +481,15 @@ mod unhappy_path_tests {
       "#;
 
         let sli: SLIDoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-        let result = sli.validate(false, None);
+        sli.validate(None, false, &mut validation_context);
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message } if
                 path == "SLI.spec.ratioMetric.raw"
                     && message == "Cannot specify raw with good, bad, or total."
-            ))
-        );
+            )
+        ));
     }
 }

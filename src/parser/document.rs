@@ -1,7 +1,10 @@
 use core::str;
 use std::collections::HashMap;
 
-use crate::utils::errors::{ParserError, ParserResult};
+use crate::utils::{
+    errors::{ParserError, ParserResult},
+    validation_context::ValidationContext,
+};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 
@@ -120,22 +123,23 @@ impl Document {
         Ok((root.metadata.name.clone(), Document::try_from(root)?))
     }
 
-    pub fn validate(&self, document_map: &HashMap<String, Document>) -> ParserResult<()> {
+    pub fn validate(&self, document_map: &HashMap<String, Document>, ctx: &mut ValidationContext) {
         match self {
-            Document::DataSource(data_source_doc) => data_source_doc.validate(Some("DataSource")),
-            Document::Slo(slodoc) => slodoc.validate(Some("SLO"), document_map),
-            Document::Sli(slidoc) => slidoc.validate(false, Some("SLI")),
+            Document::DataSource(data_source_doc) => data_source_doc.validate(None, ctx),
+            Document::Slo(slodoc) => slodoc.validate(None, document_map, ctx),
+            Document::Sli(slidoc) => slidoc.validate(None, false, ctx),
             Document::AlertPolicy(alert_policy_doc) => {
-                alert_policy_doc.validate(document_map, Some("AlertPolicy"))
+                alert_policy_doc.validate(None, document_map, ctx)
             }
+
             Document::AlertCondition(alert_condition_doc) => {
-                alert_condition_doc.validate(Some("AlertCondition"))
+                alert_condition_doc.validate(None, ctx)
             }
             Document::AlertNotificationTarget(alert_notification_target_doc) => {
-                alert_notification_target_doc.validate(Some("AlertNotificationTarget"))
+                alert_notification_target_doc.validate(None, ctx)
             }
-            Document::Service(service_doc) => service_doc.validate("Service"),
-            Document::InvalidKind => Err(ParserError::Validation {
+            Document::Service(service_doc) => service_doc.validate(ctx),
+            Document::InvalidKind => ctx.push(ParserError::Validation {
                 path: "None".to_owned(),
                 message: "Couldn't match kind".to_string(),
             }),

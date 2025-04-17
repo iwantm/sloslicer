@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::common::{Kind, Metadata};
-use crate::utils::errors::{ParserError, ParserResult};
+use crate::utils::{errors::ParserError, validation_context::ValidationContext};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct DataSourceDoc {
@@ -20,23 +20,21 @@ pub struct DataSourceSpec {
 }
 
 impl DataSourceDoc {
-    pub fn validate(&self, path: Option<&str>) -> ParserResult<()> {
-        let path = path.unwrap_or("DataSource");
+    pub fn validate(&self, path: Option<&str>, ctx: &mut ValidationContext) {
+        let path = path.unwrap_or("");
 
         if !matches!(self.kind, Some(Kind::DataSource)) {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.kind"),
                 message: "Expected kind to be DataSource.".to_string(),
             });
         };
 
         if self.spec.type_.trim().is_empty() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.spec.type"),
                 message: "Type must be a non-empty string.".to_string(),
             });
         }
-
-        Ok(())
     }
 }

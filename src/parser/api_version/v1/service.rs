@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::common::{Kind, Metadata};
-use crate::utils::errors::{ParserError, ParserResult};
+use crate::utils::{errors::ParserError, validation_context::ValidationContext};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct ServiceDoc {
@@ -16,14 +16,12 @@ pub struct ServiceSpec {
 }
 
 impl ServiceDoc {
-    pub fn validate(&self, path: &str) -> ParserResult<()> {
+    pub fn validate(&self, ctx: &mut ValidationContext) {
         if !matches!(self.kind, Some(Kind::Service)) {
-            return Err(ParserError::Validation {
-                path: format!("{path}.kind"),
+            ctx.push(ParserError::Validation {
+                path: ".kind".to_string(),
                 message: "Expected kind to be Service.".to_string(),
             });
         };
-
-        Ok(())
     }
 }

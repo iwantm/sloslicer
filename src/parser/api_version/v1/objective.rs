@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use super::common::{BudgetingMethod, DurationShorthand, Operator};
 use super::sli::SLIDoc;
 use crate::parser::document::Document;
-use crate::utils::errors::{ParserError, ParserResult};
+use crate::utils::errors::ParserError;
+use crate::utils::validation_context::ValidationContext;
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -51,16 +52,16 @@ pub struct Objective {
 }
 
 impl Objective {
-    fn validate_target(&self, path: &str) -> ParserResult<()> {
+    fn validate_target(&self, path: &str, ctx: &mut ValidationContext) {
         if self.target.is_some() && self.target_percent.is_some() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.target, {path}.targetPercent"),
                 message: "Cannot specify both target and targetPercent.".to_string(),
             });
         }
 
         if self.target.is_none() && self.target_percent.is_none() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.target, {path}.targetPercent"),
                 message: "Must specify either target or targetPercent.".to_string(),
             });
@@ -68,7 +69,7 @@ impl Objective {
 
         if let Some(target_percent) = self.target_percent {
             if target_percent <= 0.0 || target_percent >= 100.0 {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.targetPercent"),
                     message: "Target percent must be between 0 and 100.".to_string(),
                 });
@@ -77,26 +78,26 @@ impl Objective {
 
         if let Some(target) = self.target {
             if target <= 0.0 || target >= 1.0 {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.target"),
                     message: "Target must be between 0 and 1.".to_string(),
                 });
             }
         }
-        Ok(())
     }
 
     fn validate_timeslice(
         &self,
-        budgeting_method: &BudgetingMethod,
         path: &str,
-    ) -> ParserResult<()> {
+        budgeting_method: &BudgetingMethod,
+        ctx: &mut ValidationContext,
+    ) {
         if matches!(
             budgeting_method,
             BudgetingMethod::Timeslices | BudgetingMethod::RatioTimeslices
         ) {
             if self.time_slice_target.is_none() || self.time_slice_window.is_none() {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.timeSliceTarget, {path}.timeSliceWindow"),
                     message: "TimeSlices budgeting requires timeSliceTarget and timeSliceWindow."
                         .to_string(),
@@ -105,19 +106,18 @@ impl Objective {
 
             if let Some(tst) = self.time_slice_target {
                 if tst <= 0.0 || tst > 1.0 {
-                    return Err(ParserError::Validation {
+                    ctx.push(ParserError::Validation {
                         path: format!("{path}.timeSliceTarget"),
                         message: "TimeSlice target must be between 0 and 1.".to_string(),
                     });
                 }
             }
         }
-        Ok(())
     }
 
-    fn validate_operators(&self, path: &str) -> ParserResult<()> {
+    fn validate_operators(&self, path: &str, ctx: &mut ValidationContext) {
         if self.value.is_some() && self.op.is_none() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.op"),
                 message: "Operator must be specified when using a value.".to_string(),
             });
@@ -125,24 +125,23 @@ impl Objective {
 
         if let Some(op) = &self.op {
             if matches!(op, Operator::Invalid) {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.op"),
                     message: "Invalid operator specified.".to_string(),
                 });
             }
         }
-
-        Ok(())
     }
 
     fn validate_indicators(
         &self,
+        path: &str,
         document_map: &HashMap<String, Document>,
         is_composite: bool,
-        path: &str,
-    ) -> ParserResult<()> {
+        ctx: &mut ValidationContext,
+    ) {
         if self.indicator.is_some() && self.indicator_ref.is_some() {
-            return Err(ParserError::Validation {
+            ctx.push(ParserError::Validation {
                 path: format!("{path}.indicator, {path}.indicatorRef"),
                 message: "Cannot specify both indicator and indicatorRef.".to_string(),
             });
@@ -150,7 +149,7 @@ impl Objective {
 
         if is_composite {
             if self.indicator.is_none() && self.indicator_ref.is_none() {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.indicator, {path}.indicatorRef"),
                     message:
                         "Indicator or indicatorRef must be specified for composite objectives."
@@ -160,50 +159,47 @@ impl Objective {
 
             if let Some(indicator) = &self.indicator {
                 if indicator.spec.is_threshold_metric() {
-                    return Err(ParserError::Validation {
+                    ctx.push(ParserError::Validation {
                         path: format!("{path}.indicator"),
                         message: "Can't use thresholdMetric in composite objectives.".to_string(),
                     });
                 }
 
-                indicator.validate(true, Some(&format!("{path}.indicator")))?;
+                indicator.validate(Some(&format!("{path}.indicator")), true, ctx);
             }
 
             if let Some(indicator_ref) = &self.indicator_ref {
-                let document =
-                    document_map
-                        .get(indicator_ref)
-                        .ok_or_else(|| ParserError::Validation {
-                            path: format!("{path}.indicatorRef"),
-                            message: format!("Indicator reference `{}` not found.", indicator_ref),
-                        })?;
+                if let Some(document) = document_map.get(indicator_ref) {
+                    if let Document::Sli(indicator) = document {
+                        indicator.validate(Some(path), false, ctx);
 
-                let indicator = match document {
-                    Document::Sli(slidoc) => slidoc,
-                    _ => {
-                        return Err(ParserError::Validation {
+                        if indicator.spec.is_threshold_metric()
+                            && (self.op.is_none() || self.value.is_none())
+                        {
+                            ctx.push(ParserError::Validation {
+                                path: format!("{path}.indicator"),
+                                message:
+                                    "op and value must be specified when using a thresholdMetric."
+                                        .to_string(),
+                            });
+                        }
+                    } else {
+                        ctx.push(ParserError::Validation {
                             path: format!("{path}.indicatorRef"),
                             message: format!("Indicator reference `{}` wrong kind.", indicator_ref),
                         });
-                    }
-                };
-
-                indicator.validate(false, Some(path))?;
-
-                if indicator.spec.is_threshold_metric()
-                    && (self.op.is_none() || self.value.is_none())
-                {
-                    return Err(ParserError::Validation {
-                        path: format!("{path}.indicator"),
-                        message: "op and value must be specified when using a thresholdMetric."
-                            .to_string(),
-                    });
+                    };
+                } else {
+                    ctx.push(ParserError::Validation {
+                        path: format!("{path}.indicatorRef"),
+                        message: format!("Indicator reference `{}` not found.", indicator_ref),
+                    })
                 }
             }
 
             if let Some(composite_weight) = self.composite_weight {
                 if composite_weight < 0.0 {
-                    return Err(ParserError::Validation {
+                    ctx.push(ParserError::Validation {
                         path: format!("{path}.compositeWeight"),
                         message: "Composite weight must be greater than or equal to 0.".to_string(),
                     });
@@ -213,36 +209,33 @@ impl Objective {
 
         if !is_composite {
             if self.indicator.is_some() || self.indicator_ref.is_some() {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.indicator"),
                     message: "Indicator or indicatorRef must not be specified for non-composite objectives.".to_string(),
                 });
             }
             if self.composite_weight.is_some() {
-                return Err(ParserError::Validation {
+                ctx.push(ParserError::Validation {
                     path: format!("{path}.compositeWeight"),
                     message: "Composite weight must not be specified for single objectives."
                         .to_string(),
                 });
             }
         }
-
-        Ok(())
     }
 
     pub fn validate(
         &self,
+        path: &str,
         budgeting_method: &BudgetingMethod,
         document_map: &HashMap<String, Document>,
         is_composite: bool,
-        path: &str,
-    ) -> ParserResult<()> {
-        self.validate_target(path)?;
-        self.validate_timeslice(budgeting_method, path)?;
-        self.validate_operators(path)?;
-        self.validate_indicators(document_map, is_composite, path)?;
-
-        Ok(())
+        ctx: &mut ValidationContext,
+    ) {
+        self.validate_target(path, ctx);
+        self.validate_timeslice(path, budgeting_method, ctx);
+        self.validate_operators(path, ctx);
+        self.validate_indicators(path, document_map, is_composite, ctx);
     }
 }
 
@@ -334,14 +327,17 @@ mod happy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &HashMap::new(),
             false,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 
     #[test]
@@ -361,14 +357,17 @@ mod happy_path_tests {
 
         let document_map = default_document_map();
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &document_map,
             true,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 
     #[test]
@@ -414,14 +413,17 @@ mod happy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &HashMap::new(),
             true,
-            "test_path",
+            &mut validation_context,
         );
-        println!("{:?}", result);
-        assert!(result.is_ok());
+
+        assert!(validation_context.result().is_ok());
     }
 
     #[test]
@@ -439,14 +441,17 @@ mod happy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &HashMap::new(),
             false,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(result.is_ok());
+        assert!(validation_context.result().is_ok());
     }
 }
 
@@ -537,19 +542,22 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &HashMap::new(),
             false,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "test_path.target, test_path.targetPercent"
                     && message == "Cannot specify both target and targetPercent."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -567,15 +575,18 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &HashMap::new(),
             false,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(result.is_err_and(
-            |e| matches!(e, ParserError::Validation {path, message} if path == "test_path.target, test_path.targetPercent"
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation {path, message} if path == "test_path.target, test_path.targetPercent"
                     && message == "Must specify either target or targetPercent."
             )
         ));
@@ -596,14 +607,17 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::RatioTimeslices,
             &HashMap::new(),
             false,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(|e| matches!(&e[0], ParserError::Validation { path, message }
             if path == "test_path.timeSliceTarget, test_path.timeSliceWindow" 
                 && message == "TimeSlices budgeting requires timeSliceTarget and timeSliceWindow."
         )));
@@ -623,20 +637,22 @@ mod unhappy_path_tests {
             indicator_ref: None,
             composite_weight: None,
         };
+        let mut validation_context = ValidationContext::new();
 
-        let result = objective.validate(
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Timeslices,
             &HashMap::new(),
             false,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message } if
                 path == "test_path.timeSliceTarget"
                     && message == "TimeSlice target must be between 0 and 1."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -654,19 +670,22 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &HashMap::new(),
             false,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message } if
                 path == "test_path.op"
                     && message == "Operator must be specified when using a value."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -684,20 +703,23 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &HashMap::new(),
             true,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "test_path.indicator, test_path.indicatorRef"
                     && message
                         == "Indicator or indicatorRef must be specified for composite objectives."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -735,19 +757,22 @@ mod unhappy_path_tests {
         };
 
         let document_map = default_document_map();
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &document_map,
             true,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "test_path.indicator, test_path.indicatorRef"
                     && message == "Cannot specify both indicator and indicatorRef."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -766,19 +791,22 @@ mod unhappy_path_tests {
         };
 
         let document_map = default_document_map();
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &document_map,
             true,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "test_path.compositeWeight"
                     && message == "Composite weight must be greater than or equal to 0."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
@@ -796,23 +824,26 @@ mod unhappy_path_tests {
             composite_weight: Some(1.0),
         };
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &HashMap::new(),
             false,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "test_path.compositeWeight"
                     && message == "Composite weight must not be specified for single objectives."
-            ))
-        );
+            )
+        ));
     }
 
     #[test]
-    fn test_valid_composite_objective_threshold_matric() {
+    fn test_invalid_composite_objective_threshold_matric() {
         let objective = Objective {
             display_name: Some("Test Objective".to_string()),
             op: Some(Operator::Lte),
@@ -845,18 +876,21 @@ mod unhappy_path_tests {
             composite_weight: None,
         };
 
-        let result = objective.validate(
+        let mut validation_context = ValidationContext::new();
+
+        objective.validate(
+            "test_path",
             &BudgetingMethod::Occurrences,
             &HashMap::new(),
             true,
-            "test_path",
+            &mut validation_context,
         );
 
-        assert!(
-            result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
                 if path == "test_path.indicator"
                     && message == "Can't use thresholdMetric in composite objectives."
-            ))
-        );
+            )
+        ));
     }
 }

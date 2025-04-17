@@ -6,6 +6,7 @@ use serde_yaml::{Deserializer, Value};
 
 use crate::parser::document::Document;
 use crate::utils::errors::ParserResult;
+use crate::utils::validation_context::ValidationContext;
 
 pub fn validate(file: String) -> ParserResult<()> {
     let contents = std::fs::read_to_string(&file)?;
@@ -19,16 +20,31 @@ pub fn validate(file: String) -> ParserResult<()> {
         docs.insert(name, parsed_doc);
     }
 
+    let mut invalid = 0;
+    let mut valid = 0;
+
     for (name, doc) in &docs {
-        match doc.validate(&docs) {
+        let mut ctx = ValidationContext::new();
+        doc.validate(&docs, &mut ctx);
+        match ctx.result() {
             Ok(_) => {
+                valid += 1;
                 println!("[✅] {}.{} - {}", file, name, "Valid".green())
             }
             Err(e) => {
-                eprintln!("[🙅] {}.{} - {}\n ↪ {e}", file, name, "Invalid".red())
+                invalid += 1;
+                eprintln!("[🙅] {}.{} - {}", file, name, "Invalid".red());
+                for e in e {
+                    eprintln!("↪ {}", e)
+                }
             }
         }
     }
+
+    println!(
+        "\nValidation Summary: \nValid: {}\nInvalid: {}",
+        valid, invalid
+    );
 
     Ok(())
 }
