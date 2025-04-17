@@ -19,7 +19,7 @@ use super::api_version::v1::{
     slo::{SLODoc, SLOSpec},
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct RootDocument {
     #[serde(rename = "apiVersion")]
     pub api_version: String,
@@ -28,7 +28,7 @@ pub struct RootDocument {
     pub spec: serde_yaml::Value,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub enum Document {
     DataSource(DataSourceDoc),
     #[serde(rename = "SLO")]

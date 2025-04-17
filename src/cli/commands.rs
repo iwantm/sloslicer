@@ -73,13 +73,15 @@ pub fn parse_files(file: &PathBuf) -> ParserResult<(ValidationResult, HashMap<St
 
 pub fn validate(path_string: String, recursive: bool) -> ParserResult<()> {
     let files: Vec<PathBuf> = find_documents(&path_string, recursive)?;
+    let mut all_docs = HashMap::new();
 
     for file in &files {
         let (mut result, docs) = parse_files(file)?;
+        all_docs.extend(docs.clone());
 
         for (name, doc) in &docs {
             let mut ctx = ValidationContext::new();
-            doc.validate(&docs, &mut ctx);
+            doc.validate(&all_docs, &mut ctx);
             match ctx.result() {
                 Ok(_) => {
                     result.add_valid(name);

@@ -9,20 +9,20 @@ use crate::parser::document::Document;
 use crate::utils::errors::ParserError;
 use crate::utils::validation_context::ValidationContext;
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct AlertPolicyRef {
     #[serde(rename = "alertPolicyRef")]
     pub alert_policy_ref: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 #[serde(untagged)]
 pub enum AlertPolicy {
     Inline(Box<AlertPolicyDoc>),
     Reference(AlertPolicyRef),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct SLODoc {
     pub kind: Option<Kind>,
     pub metadata: Metadata,
@@ -50,7 +50,7 @@ impl SLODoc {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct SLOSpec {
     pub description: Option<String>,
     pub service: String,
@@ -248,7 +248,7 @@ impl SLOSpec {
         self.validate_alert_policy(path, document_map, ctx);
     }
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct TimeWindow {
     pub duration: DurationShorthand,
     pub calendar: Option<CalendarDetails>,
@@ -277,7 +277,7 @@ impl TimeWindow {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct CalendarDetails {
     #[serde(rename = "startTime")]
     pub start_time: String,

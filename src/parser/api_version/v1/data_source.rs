@@ -3,14 +3,14 @@ use serde::{Deserialize, Serialize};
 use super::common::{Kind, Metadata};
 use crate::utils::{errors::ParserError, validation_context::ValidationContext};
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct DataSourceDoc {
     pub kind: Option<Kind>,
     pub metadata: Metadata,
     pub spec: DataSourceSpec,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct DataSourceSpec {
     pub description: Option<String>,
     #[serde(rename = "type")]

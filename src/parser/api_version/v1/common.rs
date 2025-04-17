@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize};
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub enum Operator {
     #[serde(rename = "lte")]
     Lte,
@@ -17,7 +17,7 @@ pub enum Operator {
     Invalid,
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Serialize, Clone)]
 pub struct DurationShorthand(pub String);
 
 impl<'de> Deserialize<'de> for DurationShorthand {
@@ -43,7 +43,7 @@ impl DurationShorthand {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub enum BudgetingMethod {
     #[serde(rename = "Occurrences")]
     Occurrences,
@@ -55,7 +55,7 @@ pub enum BudgetingMethod {
     Unknown,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub enum Kind {
     #[serde(rename = "DataSource")]
     DataSource,
@@ -73,7 +73,7 @@ pub enum Kind {
     Service,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct Metadata {
     pub name: String,
     #[serde(rename = "displayName")]
@@ -82,7 +82,7 @@ pub struct Metadata {
     pub annotations: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 #[serde(untagged)]
 pub enum StringOrVec {
     Single(String),

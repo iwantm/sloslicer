@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{errors::ParserError, validation_context::ValidationContext};
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct AlertConditionDoc {
     pub kind: Option<Kind>,
     pub metadata: Metadata,
@@ -25,7 +25,7 @@ impl AlertConditionDoc {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub enum CondtionKind {
     #[serde(rename = "burnrate")]
     Burnrate,
@@ -35,7 +35,7 @@ fn default_kind() -> CondtionKind {
     CondtionKind::Burnrate
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Serialize, Clone)]
 pub struct Condition {
     pub kind: CondtionKind,
     pub op: Option<Operator>,
@@ -123,7 +123,7 @@ impl<'de> Deserialize<'de> for Condition {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct AlertConditionSpec {
     pub description: Option<String>,
     pub severity: String,

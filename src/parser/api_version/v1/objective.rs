@@ -7,7 +7,7 @@ use crate::parser::document::Document;
 use crate::utils::errors::ParserError;
 use crate::utils::validation_context::ValidationContext;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(untagged)]
 pub enum TimeSliceWindow {
     Numeric(u32),
@@ -31,7 +31,7 @@ impl Serialize for TimeSliceWindow {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct Objective {
     #[serde(rename = "displayName")]
     pub display_name: Option<String>,

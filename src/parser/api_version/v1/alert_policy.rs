@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct AlertPolicyDoc {
     pub kind: Option<Kind>,
     pub metadata: Metadata,
@@ -37,33 +37,33 @@ impl AlertPolicyDoc {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 #[serde(untagged)]
 pub enum AlertCondition {
     Reference(AlertConditionRef),
     Inline(Box<AlertConditionDoc>),
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct AlertConditionRef {
     #[serde(rename = "conditionRef")]
     pub condition_ref: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 #[serde(untagged)]
 pub enum NotificationTarget {
     Reference(NotificationTargetRef),
     Inline(AlertNotificationTargetDoc),
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct NotificationTargetRef {
     #[serde(rename = "targetRef")]
     pub target_ref: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct AlertPolicySpec {
     pub description: Option<String>,
     #[serde(default, rename = "alertWhenNoData")]
