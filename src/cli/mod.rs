@@ -10,6 +10,10 @@ pub fn run() -> ParserResult<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        commands::Commands::Validate { file, recursive } => validate(file, recursive),
+        commands::Commands::Validate {
+            file,
+            recursive,
+            quiet,
+        } => validate(file, recursive, quiet),
     }
 }

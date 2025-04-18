@@ -15,6 +15,10 @@ impl ValidationContext {
         self.errors.push(error);
     }
 
+    pub fn combine(&mut self, other: &mut Self) {
+        self.errors.append(&mut other.errors);
+    }
+
     pub fn result(self) -> Result<(), Vec<ParserError>> {
         if self.errors.is_empty() {
             Ok(())
@@ -45,20 +49,28 @@ impl ValidationResult {
     pub fn add_invalid(&mut self, name: &str, errors: Vec<ParserError>) {
         self.invalid.insert(name.to_string(), errors);
     }
+
+    pub fn result(&self) -> Result<(), ()> {
+        if self.invalid.is_empty() {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
 }
 
 impl Display for ValidationResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "[📄]: {}", self.path)?;
+        writeln!(f, "[📄] {}:", self.path)?;
 
         for file in &self.valid {
-            writeln!(f, "    ↳[✅]: {}", file)?;
+            writeln!(f, "   ↳[✅] {}", file)?;
         }
 
         for (file, errors) in &self.invalid {
-            writeln!(f, "    ↳[❌]: {}", file)?;
+            writeln!(f, "   ↳[❌] {}:", file)?;
             for err in errors {
-                writeln!(f, "         ↳{}", err)?;
+                writeln!(f, "        ↳ {}", err)?;
             }
         }
         Ok(())

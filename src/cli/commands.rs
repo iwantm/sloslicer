@@ -45,7 +45,10 @@ fn find_documents(path_string: &str, recursive: bool) -> ParserResult<Vec<PathBu
     Ok(files)
 }
 
-pub fn parse_files(file: &PathBuf) -> ParserResult<(ValidationResult, HashMap<String, Document>)> {
+pub fn parse_files(
+    file: &PathBuf,
+    ctx: &mut ValidationContext,
+) -> ParserResult<(ValidationResult, HashMap<String, Document>)> {
     let mut docs = HashMap::new();
 
     let contents = std::fs::read_to_string(file)?;
@@ -64,23 +67,26 @@ pub fn parse_files(file: &PathBuf) -> ParserResult<(ValidationResult, HashMap<St
     for doc in Deserializer::from_str(&contents) {
         let value = Value::deserialize(doc)?;
 
-        let (name, parsed_doc) = Document::parse(value, path_string)?;
+        let (name, parsed_doc) = Document::parse(value, path_string, ctx)?;
         docs.insert(name, parsed_doc);
     }
 
     Ok((validation_result, docs))
 }
 
-pub fn validate(path_string: String, recursive: bool) -> ParserResult<()> {
+pub fn validate(path_string: String, recursive: bool, quiet: bool) -> ParserResult<()> {
     let files: Vec<PathBuf> = find_documents(&path_string, recursive)?;
+    let mut results = vec![];
     let mut all_docs = HashMap::new();
 
     for file in &files {
-        let (mut result, docs) = parse_files(file)?;
+        let mut file_ctx = ValidationContext::new();
+        let (mut result, docs) = parse_files(file, &mut file_ctx)?;
         all_docs.extend(docs.clone());
 
         for (name, doc) in &docs {
             let mut ctx = ValidationContext::new();
+            ctx.combine(&mut file_ctx);
             doc.validate(&all_docs, &mut ctx);
             match ctx.result() {
                 Ok(_) => {
@@ -91,10 +97,17 @@ pub fn validate(path_string: String, recursive: bool) -> ParserResult<()> {
                 }
             }
         }
-        println!("{}", result)
+        if !quiet {
+            print!("{}", result);
+        }
+        results.push(result);
     }
 
-    Ok(())
+    if results.iter().any(|f| f.result().is_err()) {
+        std::process::exit(1);
+    } else {
+        Ok(())
+    }
 }
 
 #[derive(clap::Subcommand)]
@@ -103,5 +116,7 @@ pub enum Commands {
         file: String,
         #[clap(long)]
         recursive: bool,
+        #[clap(long)]
+        quiet: bool,
     },
 }
