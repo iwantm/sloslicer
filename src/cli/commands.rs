@@ -45,8 +45,15 @@ fn find_documents(path_string: &str, recursive: bool) -> ParserResult<Vec<PathBu
     Ok(files)
 }
 
-pub fn parse_files(file: &PathBuf) -> ParserResult<(ValidationResult, HashMap<String, Document>)> {
+pub fn parse_files(
+    file: &PathBuf,
+) -> ParserResult<(
+    ValidationResult,
+    HashMap<String, Document>,
+    HashMap<String, ValidationContext>,
+)> {
     let mut docs = HashMap::new();
+    let mut ctxs = HashMap::new();
 
     let contents = std::fs::read_to_string(file)?;
     let path_string = match file.as_path().to_str() {
@@ -62,13 +69,15 @@ pub fn parse_files(file: &PathBuf) -> ParserResult<(ValidationResult, HashMap<St
     let validation_result = ValidationResult::new(path_string.to_string());
 
     for doc in Deserializer::from_str(&contents) {
+        let mut ctx = ValidationContext::new();
         let value = Value::deserialize(doc)?;
 
-        let (name, parsed_doc) = Document::parse(value, path_string)?;
-        docs.insert(name, parsed_doc);
+        let (name, parsed_doc) = Document::parse(value, path_string, &mut ctx)?;
+        docs.insert(name.clone(), parsed_doc);
+        ctxs.insert(name, ctx);
     }
 
-    Ok((validation_result, docs))
+    Ok((validation_result, docs, ctxs))
 }
 
 pub fn validate(path_string: String, recursive: bool, quiet: bool) -> ParserResult<()> {
@@ -77,11 +86,13 @@ pub fn validate(path_string: String, recursive: bool, quiet: bool) -> ParserResu
     let mut all_docs = HashMap::new();
 
     for file in &files {
-        let (mut result, docs) = parse_files(file)?;
+        let (mut result, docs, mut ctxs) = parse_files(file)?;
         all_docs.extend(docs.clone());
 
         for (name, doc) in &docs {
+            let parse_ctx = ctxs.get_mut(name).unwrap();
             let mut ctx = ValidationContext::new();
+            ctx.combine(parse_ctx);
 
             doc.validate(&all_docs, &mut ctx);
             match ctx.result() {
