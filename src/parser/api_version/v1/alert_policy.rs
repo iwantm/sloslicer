@@ -385,7 +385,7 @@ mod unhappy_path_tests {
 
         assert!(validation_context.result().is_err_and(
             |e| matches!(&e[0], ParserError::Validation { path, message } if
-                path == "AlertPolicy.spec.condition"
+                path == ".spec.condition"
                     && message == "Condition must contain exactly one item."
             )
         ));

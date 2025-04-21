@@ -313,7 +313,7 @@ mod unhappy_path_tests {
 
         assert!(validation_context.result().is_err_and(
             |e| matches!(&e[0], ParserError::Validation { path, message }
-                if path == "SLI.spec.thresholdMetric, SLI.spec.ratioMetric"
+                if path == ".spec.thresholdMetric, .spec.ratioMetric"
                     && message == "Must specify either thresholdMetric or ratioMetric."
             )
         ));
@@ -347,7 +347,7 @@ mod unhappy_path_tests {
 
         assert!(validation_context.result().is_err_and(
             |e| matches!(&e[0], ParserError::Validation { path, message }
-                if path == "SLI.spec.thresholdMetric, SLI.spec.ratioMetric"
+                if path == ".spec.thresholdMetric, .spec.ratioMetric"
                     && message == "Cannot specify both thresholdMetric and ratioMetric."
             )
         ));
@@ -379,7 +379,7 @@ mod unhappy_path_tests {
 
         assert!(validation_context.result().is_err_and(
             |e| matches!(&e[0], ParserError::Validation { path, message }
-            if path == "SLI.spec.ratioMetric.good, SLI.spec.ratioMetric.bad"
+            if path == ".spec.ratioMetric.good, .spec.ratioMetric.bad"
                     && message == "Cannot specify both good and bad."
             )
         ));
@@ -405,7 +405,7 @@ mod unhappy_path_tests {
 
         assert!(validation_context.result().is_err_and(
             |e| matches!(&e[0], ParserError::Validation { path, message }
-                if path == "SLI.spec.ratioMetric.total"
+                if path == ".spec.ratioMetric.total"
                     && message == "Must specify total when using good or bad."
             )
         ));
@@ -431,7 +431,7 @@ mod unhappy_path_tests {
 
         assert!(validation_context.result().is_err_and(
             |e| matches!(&e[0], ParserError::Validation { path, message }
-                if path == "SLI.spec.ratioMetric.total"
+                if path == ".spec.ratioMetric.total"
                     && message == "Must specify good or bad when using total."
             )
         ));
@@ -457,7 +457,7 @@ mod unhappy_path_tests {
 
         assert!(validation_context.result().is_err_and(
             |e| matches!(&e[0], ParserError::Validation { path, message }
-                if path == "SLI.spec.ratioMetric.rawType"
+                if path == ".spec.ratioMetric.rawType"
                     && message == "Must specify rawType when using raw."
             )
         ));
@@ -487,7 +487,7 @@ mod unhappy_path_tests {
 
         assert!(validation_context.result().is_err_and(
             |e| matches!(&e[0], ParserError::Validation { path, message } if
-                path == "SLI.spec.ratioMetric.raw"
+                path == ".spec.ratioMetric.raw"
                     && message == "Cannot specify raw with good, bad, or total."
             )
         ));

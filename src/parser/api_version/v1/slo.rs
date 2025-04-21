@@ -285,585 +285,616 @@ pub struct CalendarDetails {
     pub time_zone: String,
 }
 
-// #[cfg(test)]
-// mod happy_path_tests {
-//     use crate::parser::api_version::v1::{
-//         alert_condition::AlertConditionDoc, alert_notification_target::AlertNotificationTargetDoc,
-//     };
+#[cfg(test)]
+mod happy_path_tests {
+    use crate::parser::api_version::v1::{
+        alert_condition::AlertConditionDoc, alert_notification_target::AlertNotificationTargetDoc,
+    };
 
-//     use super::super::{
-//         alert_condition::{AlertConditionSpec, Condition, CondtionKind},
-//         alert_notification_target::AlertNotificationTargetSpec,
-//         alert_policy::{AlertCondition, AlertPolicySpec, NotificationTarget},
-//         common::Operator,
-//         sli::{MetricSource, RatioMetric, RawType, SLISpec, ThresholdMetric},
-//     };
+    use super::super::{
+        alert_condition::{AlertConditionSpec, Condition, CondtionKind},
+        alert_notification_target::AlertNotificationTargetSpec,
+        alert_policy::{AlertCondition, AlertPolicySpec, NotificationTarget},
+        common::Operator,
+        sli::{MetricSource, RatioMetric, RawType, SLISpec, ThresholdMetric},
+    };
 
-//     use super::*;
-//     use serde_yaml;
+    use super::*;
+    use serde_yaml;
 
-//     #[test]
-//     fn minimal_valid_slo() {
-//         let yaml = r#"
-//         kind: SLO
-//         metadata:
-//             name: foo
-//         spec:
-//             service: foo
-//             budgetingMethod: Occurrences
-//             indicator:
-//                 metadata:
-//                     name: foo-indicator
-//                 spec:
-//                     ratioMetric:
-//                         counter: true
-//                         good:
-//                             metricSource:
-//                                 metricSourceRef: datadog-datasource
-//                                 type: Datadog
-//                                 spec:
-//                                     query: sum:trace.http.request.hits.by_http_status{*}.as_count()
-//                         total:
-//                             metricSource:
-//                                 metricSourceRef: datadog-datasource
-//                                 type: Datadog
-//                                 spec:
-//                                     query: sum:trace.http.request.hits.by_http_status{*}.as_count()
-//             objectives:
-//                 - displayName: Foo Total Errors
-//                   target: 0.98
-//         "#;
+    #[test]
+    fn minimal_valid_slo() {
+        let yaml = r#"
+        kind: SLO
+        metadata:
+            name: foo
+        spec:
+            service: foo
+            budgetingMethod: Occurrences
+            indicator:
+                metadata:
+                    name: foo-indicator
+                spec:
+                    ratioMetric:
+                        counter: true
+                        good:
+                            metricSource:
+                                metricSourceRef: datadog-datasource
+                                type: Datadog
+                                spec:
+                                    query: sum:trace.http.request.hits.by_http_status{*}.as_count()
+                        total:
+                            metricSource:
+                                metricSourceRef: datadog-datasource
+                                type: Datadog
+                                spec:
+                                    query: sum:trace.http.request.hits.by_http_status{*}.as_count()
+            objectives:
+                - displayName: Foo Total Errors
+                  target: 0.98
+        "#;
 
-//         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+        let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+        let mut validation_context = ValidationContext::new();
 
-//         let result = slo.validate(None, &HashMap::new());
+        slo.validate(None, &HashMap::new(), &mut validation_context);
 
-//         assert!(result.is_ok(), "Expected valid SLO to pass validation");
-//     }
+        assert!(
+            validation_context.result().is_ok(),
+            "Expected valid SLO to pass validation"
+        );
+    }
 
-//     #[test]
-//     fn calendar_window() {
-//         let yaml = r#"
-//         kind: SLO
-//         metadata:
-//             name: foo
-//         spec:
-//             description: "Monthly uptime tracking"
-//             service: backend-api
-//             indicatorRef: availability-sli
-//             budgetingMethod: Timeslices
-//             timeWindow:
-//                 - duration: 1M
-//                   calendar:
-//                     startTime: "2025-04-01 00:00:00"
-//                     timeZone: "UTC"
-//                   isRolling: false
-//             objectives:
-//                 - targetPercent: 99.5
-//                   timeSliceTarget: 0.99
-//                   timeSliceWindow: 5m
-//         "#;
+    #[test]
+    fn calendar_window() {
+        let yaml = r#"
+        kind: SLO
+        metadata:
+            name: foo
+        spec:
+            description: "Monthly uptime tracking"
+            service: backend-api
+            indicatorRef: availability-sli
+            budgetingMethod: Timeslices
+            timeWindow:
+                - duration: 1M
+                  calendar:
+                    startTime: "2025-04-01 00:00:00"
+                    timeZone: "UTC"
+                  isRolling: false
+            objectives:
+                - targetPercent: 99.5
+                  timeSliceTarget: 0.99
+                  timeSliceWindow: 5m
+        "#;
 
-//         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
-//         let mut document_map = HashMap::new();
+        let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+        let mut document_map = HashMap::new();
 
-//         document_map.insert(
-//             "availability-sli".to_string(),
-//             Document::Sli(SLIDoc {
-//                 kind: Some(Kind::Slo),
-//                 metadata: Metadata {
-//                     name: "availability-sli".to_string(),
-//                     display_name: None,
-//                     labels: None,
-//                     annotations: None,
-//                 },
-//                 spec: SLISpec {
-//                     threshold_metric: Some(ThresholdMetric {
-//                         metric_source: MetricSource {
-//                             metric_source_ref: Some("datadoge".to_string()),
-//                             type_: Some("datadoge".to_string()),
-//                             spec: None,
-//                         },
-//                     }),
-//                     description: None,
-//                     ratio_metric: None,
-//                     // Add other fields as necessary
-//                 },
-//             }),
-//         );
+        document_map.insert(
+            "availability-sli".to_string(),
+            Document::Sli(SLIDoc {
+                kind: Some(Kind::Sli),
+                metadata: Metadata {
+                    name: "availability-sli".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
+                spec: SLISpec {
+                    threshold_metric: Some(ThresholdMetric {
+                        metric_source: MetricSource {
+                            metric_source_ref: Some("datadoge".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        },
+                    }),
+                    description: None,
+                    ratio_metric: None,
+                },
+            }),
+        );
 
-//         let result = slo.validate(None, &document_map);
+        let mut validation_context = ValidationContext::new();
 
-//         assert!(result.is_ok(), "Expected valid SLO to pass validation");
-//     }
+        slo.validate(None, &document_map, &mut validation_context);
 
-//     #[test]
-//     fn composite_slo() {
-//         let yaml = r#"
-//         kind: SLO
-//         metadata:
-//             name: foo
-//         spec:
-//             service: composite-service
-//             budgetingMethod: RatioTimeslices
-//             timeWindow:
-//                 - duration: 7d
-//                   isRolling: true
-//             objectives:
-//                 - target: 0.98
-//                   indicatorRef: slo-1
-//                   compositeWeight: 1
-//                   timeSliceTarget: 0.95
-//                   timeSliceWindow: 1h
-//                 - targetPercent: 99.9
-//                   indicatorRef: slo-2
-//                   compositeWeight: 2
-//                   timeSliceTarget: 0.97
-//                   timeSliceWindow: 1h
-//         "#;
+        assert!(
+            validation_context.result().is_ok(),
+            "Expected valid SLO to pass validation"
+        );
+    }
 
-//         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
-//         let mut document_map = HashMap::new();
+    #[test]
+    fn composite_slo() {
+        let yaml = r#"
+        kind: SLO
+        metadata:
+            name: foo
+        spec:
+            service: composite-service
+            budgetingMethod: RatioTimeslices
+            timeWindow:
+                - duration: 7d
+                  isRolling: true
+            objectives:
+                - target: 0.98
+                  indicatorRef: slo-1
+                  compositeWeight: 1
+                  timeSliceTarget: 0.95
+                  timeSliceWindow: 1h
+                - targetPercent: 99.9
+                  indicatorRef: slo-2
+                  compositeWeight: 2
+                  timeSliceTarget: 0.97
+                  timeSliceWindow: 1h
+        "#;
 
-//         document_map.insert(
-//             "slo-2".to_string(),
-//             Document::Sli(SLIDoc {
-//                 kind: Some(Kind::Sli),
-//                 metadata: Metadata {
-//                     name: "availability-sli".to_string(),
-//                     display_name: None,
-//                     labels: None,
-//                     annotations: None,
-//                 },
-//                 spec: SLISpec {
-//                     threshold_metric: None,
-//                     description: None,
-//                     ratio_metric: Some(RatioMetric {
-//                         counter: Some(true),
-//                         good: None,
-//                         bad: None,
-//                         total: None,
-//                         raw_type: Some(RawType::Success),
-//                         raw: Some(MetricSource {
-//                             metric_source_ref: Some("datadoge".to_string()),
-//                             type_: Some("datadoge".to_string()),
-//                             spec: None,
-//                         }),
-//                     }),
-//                 },
-//             }),
-//         );
+        let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+        let mut document_map = HashMap::new();
 
-//         document_map.insert(
-//             "slo-1".to_string(),
-//             Document::Sli(SLIDoc {
-//                 kind: Some(Kind::Sli),
-//                 metadata: Metadata {
-//                     name: "availability-sli".to_string(),
-//                     display_name: None,
-//                     labels: None,
-//                     annotations: None,
-//                 },
-//                 spec: SLISpec {
-//                     threshold_metric: None,
-//                     description: None,
-//                     ratio_metric: Some(RatioMetric {
-//                         counter: Some(true),
-//                         good: Some(MetricSource {
-//                             metric_source_ref: Some("datadoge".to_string()),
-//                             type_: Some("datadoge".to_string()),
-//                             spec: None,
-//                         }),
-//                         bad: None,
-//                         total: Some(MetricSource {
-//                             metric_source_ref: Some("datadoge".to_string()),
-//                             type_: Some("datadoge".to_string()),
-//                             spec: None,
-//                         }),
-//                         raw_type: None,
-//                         raw: None,
-//                     }),
-//                 },
-//             }),
-//         );
+        document_map.insert(
+            "slo-2".to_string(),
+            Document::Sli(SLIDoc {
+                kind: Some(Kind::Sli),
+                metadata: Metadata {
+                    name: "availability-sli".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
+                spec: SLISpec {
+                    threshold_metric: None,
+                    description: None,
+                    ratio_metric: Some(RatioMetric {
+                        counter: Some(true),
+                        good: None,
+                        bad: None,
+                        total: None,
+                        raw_type: Some(RawType::Success),
+                        raw: Some(MetricSource {
+                            metric_source_ref: Some("datadoge".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        }),
+                    }),
+                },
+            }),
+        );
 
-//         let result = slo.validate(None, &document_map);
-//         println!("{:?}", result);
+        document_map.insert(
+            "slo-1".to_string(),
+            Document::Sli(SLIDoc {
+                kind: Some(Kind::Sli),
+                metadata: Metadata {
+                    name: "availability-sli".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
+                spec: SLISpec {
+                    threshold_metric: None,
+                    description: None,
+                    ratio_metric: Some(RatioMetric {
+                        counter: Some(true),
+                        good: Some(MetricSource {
+                            metric_source_ref: Some("datadoge".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        }),
+                        bad: None,
+                        total: Some(MetricSource {
+                            metric_source_ref: Some("datadoge".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        }),
+                        raw_type: None,
+                        raw: None,
+                    }),
+                },
+            }),
+        );
 
-//         assert!(result.is_ok(), "Expected valid SLO to pass validation");
-//     }
+        let mut validation_context = ValidationContext::new();
 
-//     #[test]
-//     fn alert_policy_ref() {
-//         let yaml = r#"
-//         kind: SLO
-//         metadata:
-//             name: foo
-//         spec:
-//             service: alerts-service
-//             indicatorRef: error-rate-sli
-//             budgetingMethod: Occurrences
-//             timeWindow:
-//                 - duration: 30d
-//                   isRolling: true
-//             objectives:
-//                 - target: 0.99
-//             alertPolicies:
-//                 - alertPolicyRef: high-error-rate-alert
-//         "#;
+        slo.validate(None, &document_map, &mut validation_context);
 
-//         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
-//         let mut document_map = HashMap::new();
+        assert!(
+            validation_context.result().is_ok(),
+            "Expected valid SLO to pass validation"
+        );
+    }
 
-//         document_map.insert(
-//             "error-rate-sli".to_string(),
-//             Document::Sli(SLIDoc {
-//                 kind: Some(Kind::Slo),
-//                 metadata: Metadata {
-//                     name: "availability-sli".to_string(),
-//                     display_name: None,
-//                     labels: None,
-//                     annotations: None,
-//                 },
-//                 spec: SLISpec {
-//                     threshold_metric: Some(ThresholdMetric {
-//                         metric_source: MetricSource {
-//                             metric_source_ref: Some("datadoge".to_string()),
-//                             type_: Some("datadoge".to_string()),
-//                             spec: None,
-//                         },
-//                     }),
-//                     description: None,
-//                     ratio_metric: None,
-//                     // Add other fields as necessary
-//                 },
-//             }),
-//         );
+    #[test]
+    fn alert_policy_ref() {
+        let yaml = r#"
+        kind: SLO
+        metadata:
+            name: foo
+        spec:
+            service: alerts-service
+            indicatorRef: error-rate-sli
+            budgetingMethod: Occurrences
+            timeWindow:
+                - duration: 30d
+                  isRolling: true
+            objectives:
+                - target: 0.99
+            alertPolicies:
+                - alertPolicyRef: high-error-rate-alert
+        "#;
 
-//         document_map.insert(
-//             "high-error-rate-alert".to_string(),
-//             Document::AlertPolicy(AlertPolicyDoc {
-//                 kind: Some(Kind::AlertPolicy),
-//                 metadata: Metadata {
-//                     name: "high-error-rate-alert".to_string(),
-//                     display_name: None,
-//                     labels: None,
-//                     annotations: None,
-//                 },
-//                 spec: AlertPolicySpec {
-//                     description: None,
-//                     alert_when_no_data: false,
-//                     alert_when_resolved: false,
-//                     alert_when_breaching: false,
-//                     conditions: vec![AlertCondition::Inline(Box::new(AlertConditionDoc {
-//                         kind: Some(Kind::AlertCondition),
-//                         metadata: Metadata {
-//                             name: "high-error-rate-alert".to_string(),
-//                             display_name: None,
-//                             labels: None,
-//                             annotations: None,
-//                         },
-//                         spec: AlertConditionSpec {
-//                             description: None,
-//                             severity: "sev1".to_string(),
-//                             condition: Condition {
-//                                 kind: CondtionKind::Burnrate,
-//                                 op: Some(Operator::Gte),
-//                                 threshold: Some(0.8),
-//                                 lookback_window: Some(DurationShorthand("5m".to_string())),
-//                                 alert_after: Some(DurationShorthand("0m".to_string())),
-//                             },
-//                         },
-//                     }))],
-//                     notification_targets: vec![NotificationTarget::Inline(
-//                         AlertNotificationTargetDoc {
-//                             kind: Some(Kind::AlertNotificationTarget),
-//                             metadata: Metadata {
-//                                 name: "notification-target".to_string(),
-//                                 display_name: None,
-//                                 labels: None,
-//                                 annotations: None,
-//                             },
-//                             spec: AlertNotificationTargetSpec {
-//                                 description: None,
-//                                 target: "slack".to_string(),
-//                             },
-//                         },
-//                     )],
-//                 },
-//             }),
-//         );
+        let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+        let mut document_map = HashMap::new();
 
-//         let result = slo.validate(None, &document_map);
+        document_map.insert(
+            "error-rate-sli".to_string(),
+            Document::Sli(SLIDoc {
+                kind: Some(Kind::Sli),
+                metadata: Metadata {
+                    name: "availability-sli".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
+                spec: SLISpec {
+                    threshold_metric: Some(ThresholdMetric {
+                        metric_source: MetricSource {
+                            metric_source_ref: Some("datadoge".to_string()),
+                            type_: Some("datadoge".to_string()),
+                            spec: None,
+                        },
+                    }),
+                    description: None,
+                    ratio_metric: None,
+                },
+            }),
+        );
 
-//         assert!(result.is_ok(), "Expected valid SLO to pass validation");
-//     }
+        document_map.insert(
+            "high-error-rate-alert".to_string(),
+            Document::AlertPolicy(AlertPolicyDoc {
+                kind: Some(Kind::AlertPolicy),
+                metadata: Metadata {
+                    name: "high-error-rate-alert".to_string(),
+                    display_name: None,
+                    labels: None,
+                    annotations: None,
+                },
+                spec: AlertPolicySpec {
+                    description: None,
+                    alert_when_no_data: false,
+                    alert_when_resolved: false,
+                    alert_when_breaching: false,
+                    conditions: vec![AlertCondition::Inline(Box::new(AlertConditionDoc {
+                        kind: Some(Kind::AlertCondition),
+                        metadata: Metadata {
+                            name: "high-error-rate-alert".to_string(),
+                            display_name: None,
+                            labels: None,
+                            annotations: None,
+                        },
+                        spec: AlertConditionSpec {
+                            description: None,
+                            severity: "sev1".to_string(),
+                            condition: Condition {
+                                kind: CondtionKind::Burnrate,
+                                op: Some(Operator::Gte),
+                                threshold: Some(0.8),
+                                lookback_window: Some(DurationShorthand("5m".to_string())),
+                                alert_after: Some(DurationShorthand("0m".to_string())),
+                            },
+                        },
+                    }))],
+                    notification_targets: vec![NotificationTarget::Inline(
+                        AlertNotificationTargetDoc {
+                            kind: Some(Kind::AlertNotificationTarget),
+                            metadata: Metadata {
+                                name: "notification-target".to_string(),
+                                display_name: None,
+                                labels: None,
+                                annotations: None,
+                            },
+                            spec: AlertNotificationTargetSpec {
+                                description: None,
+                                target: "slack".to_string(),
+                            },
+                        },
+                    )],
+                },
+            }),
+        );
 
-//     #[test]
-//     fn everything_inline() {
-//         let yaml = r#"
-//             kind: SLO
-//             metadata:
-//                 name: foo
-//             spec:
-//                 description: "Monthly uptime tracking"
-//                 service: foo
-//                 budgetingMethod: Occurrences
-//                 indicator:
-//                     metadata:
-//                         name: foo-indicator
-//                     spec:
-//                         ratioMetric:
-//                             counter: true
-//                             good:
-//                                 metricSource:
-//                                     metricSourceRef: datadog-datasource
-//                                     type: Datadog
-//                                     spec:
-//                                         query: sum:trace.http.request.hits.by_http_status{*}.as_count()
-//                             total:
-//                                 metricSource:
-//                                     metricSourceRef: datadog-datasource
-//                                     type: Datadog
-//                                     spec:
-//                                         query: sum:trace.http.request.hits.by_http_status{*}.as_count()
-//                 objectives:
-//                     - displayName: Foo Total Errors
-//                       target: 0.98
-//                 alertPolicies:
-//                     - kind: AlertPolicy
-//                       metadata:
-//                         name: latency-policy
-//                       spec:
-//                         description: Inlined condition, referenced target
-//                         alertWhenNoData: false
-//                         alertWhenResolved: true
-//                         alertWhenBreaching: false
-//                         conditions:
-//                             - kind: AlertCondition
-//                               metadata:
-//                                 name: high-latency
-//                               spec:
-//                                 severity: page
-//                                 condition:
-//                                     kind: burnrate
-//                                     op: gte
-//                                     threshold: 1.5
-//                                     lookbackWindow: 5m
-//                         notificationTargets:
-//                             - kind: AlertNotificationTarget
-//                               metadata:
-//                                 name: slack-notification
-//                               spec:
-//                                 description: Slack notification
-//                                 target: slack
-//             "#;
+        let mut validation_context = ValidationContext::new();
 
-//         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+        slo.validate(None, &document_map, &mut validation_context);
 
-//         let result = slo.validate(None, &HashMap::new());
+        assert!(
+            validation_context.result().is_ok(),
+            "Expected valid SLO to pass validation"
+        );
+    }
 
-//         assert!(result.is_ok(), "Expected valid SLO to pass validation");
-//     }
-// }
+    #[test]
+    fn everything_inline() {
+        let yaml = r#"
+            kind: SLO
+            metadata:
+                name: foo
+            spec:
+                description: "Monthly uptime tracking"
+                service: foo
+                budgetingMethod: Occurrences
+                indicator:
+                    metadata:
+                        name: foo-indicator
+                    spec:
+                        ratioMetric:
+                            counter: true
+                            good:
+                                metricSource:
+                                    metricSourceRef: datadog-datasource
+                                    type: Datadog
+                                    spec:
+                                        query: sum:trace.http.request.hits.by_http_status{*}.as_count()
+                            total:
+                                metricSource:
+                                    metricSourceRef: datadog-datasource
+                                    type: Datadog
+                                    spec:
+                                        query: sum:trace.http.request.hits.by_http_status{*}.as_count()
+                objectives:
+                    - displayName: Foo Total Errors
+                      target: 0.98
+                alertPolicies:
+                    - kind: AlertPolicy
+                      metadata:
+                        name: latency-policy
+                      spec:
+                        description: Inlined condition, referenced target
+                        alertWhenNoData: false
+                        alertWhenResolved: true
+                        alertWhenBreaching: false
+                        conditions:
+                            - kind: AlertCondition
+                              metadata:
+                                name: high-latency
+                              spec:
+                                severity: page
+                                condition:
+                                    kind: burnrate
+                                    op: gte
+                                    threshold: 1.5
+                                    lookbackWindow: 5m
+                        notificationTargets:
+                            - kind: AlertNotificationTarget
+                              metadata:
+                                name: slack-notification
+                              spec:
+                                description: Slack notification
+                                target: slack
+            "#;
 
-// #[cfg(test)]
-// mod unhappy_path_tests {
+        let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-//     use super::*;
-//     use serde_yaml;
+        let mut validation_context = ValidationContext::new();
 
-//     #[test]
-//     fn missing_indicator() {
-//         let yaml = r#"
-//         kind: SLO
-//         metadata:
-//             name: foo
-//         spec:
-//             service: missing-indicator
-//             budgetingMethod: Occurrences
-//             objectives:
-//             - target: 0.99
-//         "#;
+        slo.validate(None, &HashMap::new(), &mut validation_context);
 
-//         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+        assert!(
+            validation_context.result().is_ok(),
+            "Expected valid SLO to pass validation"
+        );
+    }
+}
 
-//         let result = slo.validate(None, &HashMap::new());
+#[cfg(test)]
+mod unhappy_path_tests {
 
-//         assert!(
-//             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
-//                 path == "SLO.spec.indicator, SLO.spec.indicatorRef"
-//                     && message == "Must define either indicator or indicatorRef."
-//             ))
-//         );
-//     }
+    use super::*;
+    use serde_yaml;
 
-//     #[test]
-//     fn double_indicator() {
-//         let yaml = r#"
-//         kind: SLO
-//         metadata:
-//             name: foo
-//         spec:
-//             service: missing-indicator
-//             budgetingMethod: Occurrences
-//             indicatorRef: missing-indicator
-//             indicator:
-//                 metadata:
-//                     name: foo-indicator
-//                 spec:
-//                     ratioMetric:
-//                         counter: true
-//                         good:
-//                             metricSource:
-//                                 metricSourceRef: datadog-datasource
-//                                 type: Datadog
-//                                 spec:
-//                                     query: sum:trace.http.request.hits.by_http_status{*}.as_count()
-//                         total:
-//                             metricSource:
-//                                 metricSourceRef: datadog-datasource
-//                                 type: Datadog
-//                                 spec:
-//                                     query: sum:trace.http.request.hits.by_http_status{*}.as_count()
-//             objectives:
-//             - target: 0.99
-//         "#;
+    #[test]
+    fn missing_indicator() {
+        let yaml = r#"
+        kind: SLO
+        metadata:
+            name: foo
+        spec:
+            service: missing-indicator
+            budgetingMethod: Occurrences
+            objectives:
+            - target: 0.99
+        "#;
 
-//         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+        let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-//         let result = slo.validate(None, &HashMap::new());
+        let mut validation_context = ValidationContext::new();
 
-//         assert!(
-//             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
-//                 path == "SLO.spec.indicator, SLO.spec.indicatorRef"
-//                     && message == "Cannot define both indicator and indicatorRef."
-//             ))
-//         );
-//     }
+        slo.validate(None, &HashMap::new(), &mut validation_context);
 
-//     #[test]
-//     fn alert_policy_not_in_map() {
-//         let yaml = r#"
-//         kind: SLO
-//         metadata:
-//             name: foo
-//         spec:
-//             service: missing-indicator
-//             budgetingMethod: Occurrences
-//             indicator:
-//                 metadata:
-//                     name: foo-indicator
-//                 spec:
-//                     ratioMetric:
-//                         counter: true
-//                         good:
-//                             metricSource:
-//                                 metricSourceRef: datadog-datasource
-//                                 type: Datadog
-//                                 spec:
-//                                     query: sum:trace.http.request.hits.by_http_status{*}.as_count()
-//                         total:
-//                             metricSource:
-//                                 metricSourceRef: datadog-datasource
-//                                 type: Datadog
-//                                 spec:
-//                                     query: sum:trace.http.request.hits.by_http_status{*}.as_count()
-//             alertPolicies:
-//                 - alertPolicyRef: not-found
-//             objectives:
-//                 - target: 0.99
-//         "#;
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message } if
+                path == ".spec.indicator, .spec.indicatorRef"
+                    && message == "Must define either indicator or indicatorRef."
+            )
+        ));
+    }
 
-//         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+    #[test]
+    fn double_indicator() {
+        let yaml = r#"
+        kind: SLO
+        metadata:
+            name: foo
+        spec:
+            service: missing-indicator
+            budgetingMethod: Occurrences
+            indicatorRef: missing-indicator
+            indicator:
+                metadata:
+                    name: foo-indicator
+                spec:
+                    ratioMetric:
+                        counter: true
+                        good:
+                            metricSource:
+                                metricSourceRef: datadog-datasource
+                                type: Datadog
+                                spec:
+                                    query: sum:trace.http.request.hits.by_http_status{*}.as_count()
+                        total:
+                            metricSource:
+                                metricSourceRef: datadog-datasource
+                                type: Datadog
+                                spec:
+                                    query: sum:trace.http.request.hits.by_http_status{*}.as_count()
+            objectives:
+            - target: 0.99
+        "#;
 
-//         let result = slo.validate(None, &HashMap::new());
+        let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-//         assert!(
-//             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
-//                 path == "SLO.spec.alertPolicy[0]"
-//                     && message == "Alert policy reference `not-found` not found."
-//             ))
-//         );
-//     }
+        let mut validation_context = ValidationContext::new();
 
-//     #[test]
-//     fn indicator_ref_not_found() {
-//         let yaml: &str = r#"
-//         kind: SLO
-//         metadata:
-//             name: foo
-//         spec:
-//             service: foo
-//             budgetingMethod: Occurrences
-//             indicatorRef: not-found
-//             objectives:
-//                 - displayName: Foo Total Errors
-//                   target: 0.98
-//         "#;
+        slo.validate(None, &HashMap::new(), &mut validation_context);
 
-//         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message } if
+                path == ".spec.indicator, .spec.indicatorRef"
+                    && message == "Cannot define both indicator and indicatorRef."
+            )
+        ));
+    }
 
-//         let result = slo.validate(None, &HashMap::new());
+    #[test]
+    fn alert_policy_not_in_map() {
+        let yaml = r#"
+        kind: SLO
+        metadata:
+            name: foo
+        spec:
+            service: missing-indicator
+            budgetingMethod: Occurrences
+            indicator:
+                metadata:
+                    name: foo-indicator
+                spec:
+                    ratioMetric:
+                        counter: true
+                        good:
+                            metricSource:
+                                metricSourceRef: datadog-datasource
+                                type: Datadog
+                                spec:
+                                    query: sum:trace.http.request.hits.by_http_status{*}.as_count()
+                        total:
+                            metricSource:
+                                metricSourceRef: datadog-datasource
+                                type: Datadog
+                                spec:
+                                    query: sum:trace.http.request.hits.by_http_status{*}.as_count()
+            alertPolicies:
+                - alertPolicyRef: not-found
+            objectives:
+                - target: 0.99
+        "#;
 
-//         assert!(
-//             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message }
-//                 if path == "SLO.spec.indicatorRef"
-//                     && message == "Indicator reference `not-found` not found."
-//             ))
-//         );
-//     }
+        let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
 
-//     #[test]
-//     fn top_level_indicator_composite() {
-//         let yaml: &str = r#"
-//         kind: SLO
-//         metadata:
-//             name: foo
-//         spec:
-//             service: bad-composite
-//             budgetingMethod: RatioTimeslices
-//             indicator:
-//                 metadata:
-//                     name: foo-indicator
-//                 spec:
-//                     ratioMetric:
-//                         counter: true
-//                         good:
-//                             metricSource:
-//                                 metricSourceRef: datadog-datasource
-//                                 type: Datadog
-//                                 spec:
-//                                     query: sum:trace.http.request.hits.by_http_status{*}.as_count()
-//                         total:
-//                             metricSource:
-//                                 metricSourceRef: datadog-datasource
-//                                 type: Datadog
-//                                 spec:
-//                                     query: sum:trace.http.request.hits.by_http_status{*}.as_count()
-//             timeWindow:
-//                 - duration: 1w
-//                   isRolling: true
-//             objectives:
-//                 - target: 0.9
-//                   indicatorRef: foo
-//                   timeSliceTarget: 0.9
-//                   timeSliceWindow: 5m
-//                 - target: 0.95
-//                   indicatorRef: bar
-//                   timeSliceTarget: 0.9
-//                   timeSliceWindow: 5m
-//         "#;
+        let mut validation_context = ValidationContext::new();
 
-//         let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+        slo.validate(None, &HashMap::new(), &mut validation_context);
 
-//         let result = slo.validate(None, &HashMap::new());
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message } if
+                path == ".spec.alertPolicy[0]"
+                    && message == "Alert policy reference `not-found` not found."
+            )
+        ));
+    }
 
-//         assert!(
-//             result.is_err_and(|e| matches!(e, ParserError::Validation { path, message } if
-//                 path == "SLO.spec.indicator"
-//                     && message == "indicator is not allowed for composite SLOs."
-//             ))
-//         );
-//     }
-// }
+    #[test]
+    fn indicator_ref_not_found() {
+        let yaml: &str = r#"
+        kind: SLO
+        metadata:
+            name: foo
+        spec:
+            service: foo
+            budgetingMethod: Occurrences
+            indicatorRef: not-found
+            objectives:
+                - displayName: Foo Total Errors
+                  target: 0.98
+        "#;
+
+        let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+
+        let mut validation_context = ValidationContext::new();
+
+        slo.validate(None, &HashMap::new(), &mut validation_context);
+
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
+                if path == ".spec.indicatorRef"
+                    && message == "Indicator reference `not-found` not found."
+            )
+        ));
+    }
+
+    #[test]
+    fn top_level_indicator_composite() {
+        let yaml: &str = r#"
+        kind: SLO
+        metadata:
+            name: foo
+        spec:
+            service: bad-composite
+            budgetingMethod: RatioTimeslices
+            indicator:
+                metadata:
+                    name: foo-indicator
+                spec:
+                    ratioMetric:
+                        counter: true
+                        good:
+                            metricSource:
+                                metricSourceRef: datadog-datasource
+                                type: Datadog
+                                spec:
+                                    query: sum:trace.http.request.hits.by_http_status{*}.as_count()
+                        total:
+                            metricSource:
+                                metricSourceRef: datadog-datasource
+                                type: Datadog
+                                spec:
+                                    query: sum:trace.http.request.hits.by_http_status{*}.as_count()
+            timeWindow:
+                - duration: 1w
+                  isRolling: true
+            objectives:
+                - target: 0.9
+                  indicatorRef: foo
+                  timeSliceTarget: 0.9
+                  timeSliceWindow: 5m
+                - target: 0.95
+                  indicatorRef: bar
+                  timeSliceTarget: 0.9
+                  timeSliceWindow: 5m
+        "#;
+
+        let slo: SLODoc = serde_yaml::from_str(yaml).unwrap();
+
+        let mut validation_context = ValidationContext::new();
+
+        slo.validate(None, &HashMap::new(), &mut validation_context);
+
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message } if
+                path == ".spec.indicator"
+                    && message == "indicator is not allowed for composite SLOs."
+            )
+        ));
+    }
+}

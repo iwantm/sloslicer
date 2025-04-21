@@ -17,10 +17,6 @@ impl ValidationContext {
         self.errors.push(error);
     }
 
-    pub fn combine(&mut self, other: &mut Self) {
-        self.errors.append(&mut other.errors);
-    }
-
     pub fn result(self) -> Result<(), Vec<ParserError>> {
         if self.errors.is_empty() {
             Ok(())

@@ -287,7 +287,7 @@ mod unhappy_path_tests {
 
         assert!(validation_context.result().is_err_and(
             |e| matches!(&e[0], ParserError::Validation { path, message }
-            if path == "AlertCondition.spec.condition.op"
+            if path == ".spec.condition.op"
                 && message == "Operator must be specified for burnrate condition.")
         ));
     }
@@ -312,9 +312,9 @@ mod unhappy_path_tests {
         let mut validation_context = ValidationContext::new();
         alert_condition.validate(None, &mut validation_context);
 
-        assert!(
-            validation_context.result().is_err_and(|e| matches!(&e[0], ParserError::Validation { path, message }
-            if path == "AlertCondition.spec.condition.op" && message == "Invalid operator specified."))
-        );
+        assert!(validation_context.result().is_err_and(
+            |e| matches!(&e[0], ParserError::Validation { path, message }
+            if path == ".spec.condition.op" && message == "Invalid operator specified.")
+        ));
     }
 }
