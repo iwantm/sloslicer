@@ -2,6 +2,8 @@ use std::{collections::HashMap, fmt::Display};
 
 use super::errors::ParserError;
 
+#[derive(Debug)]
+
 pub struct ValidationContext {
     errors: Vec<ParserError>,
 }

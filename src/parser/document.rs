@@ -110,11 +110,7 @@ impl TryFrom<RootDocument> for Document {
 }
 
 impl Document {
-    pub fn parse(
-        yaml: Value,
-        path: &str,
-        ctx: &mut ValidationContext,
-    ) -> ParserResult<(String, Self)> {
+    pub fn parse(yaml: Value, path: &str) -> ParserResult<(String, Self)> {
         let root: RootDocument = serde_yaml::from_value(yaml)?;
 
         if !root.api_version.ends_with("v1") {
@@ -126,9 +122,7 @@ impl Document {
 
         let name = root.metadata.name.clone();
 
-        let idk = Document::try_from(root).unwrap_or_else(|e| {
-            ctx.push(e);
-        });
+        let idk = Document::try_from(root).unwrap_or(Document::InvalidKind);
 
         Ok((name, idk))
     }
@@ -151,7 +145,7 @@ impl Document {
             Document::Service(service_doc) => service_doc.validate(ctx),
             Document::InvalidKind => ctx.push(ParserError::Validation {
                 path: "None".to_owned(),
-                message: "Couldn't match kind".to_string(),
+                message: "Couldn't match Document".to_string(),
             }),
         }
     }
