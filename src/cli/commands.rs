@@ -103,7 +103,7 @@ pub fn validate(path_string: String, recursive: bool, quiet: bool) -> ParserResu
 
     let all_docs: HashMap<String, Document> = parsed_results
         .par_iter()
-        .flat_map(|doc| doc.documents.clone()) // clones each (k,v) pair, not whole HashMap
+        .flat_map(|doc| doc.documents.clone())
         .collect();
 
     let all_docs = Arc::new(all_docs);
