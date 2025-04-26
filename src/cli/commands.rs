@@ -91,7 +91,7 @@ pub fn parse_files(file: &PathBuf) -> ParserResult<DocumentParseResult> {
 }
 
 pub fn validate(path_string: String, recursive: bool, quiet: bool) -> ParserResult<()> {
-    let mut results = vec![];
+    // let mut results = vec![];
 
     let files: Vec<PathBuf> = find_documents(&path_string, recursive)?;
 
@@ -110,28 +110,29 @@ pub fn validate(path_string: String, recursive: bool, quiet: bool) -> ParserResu
     }
     let all_docs = Arc::new(all_docs);
 
-    for (mut result, docs, mut ctxs) in parsed_results {
-        for (name, doc) in &docs {
-            let parse_ctx = ctxs.get_mut(name).unwrap();
-            let mut ctx = ValidationContext::new();
-            ctx.combine(parse_ctx);
+    let results: Vec<_> = parsed_results
+        .into_par_iter()
+        .map(|(mut result, docs, mut ctxs)| {
+            for (name, doc) in &docs {
+                let parse_ctx = ctxs.get_mut(name).unwrap();
+                let mut ctx = ValidationContext::new();
+                ctx.combine(parse_ctx);
 
-            doc.validate(name, &*all_docs, &mut ctx);
-            match ctx.result() {
-                Ok(_) => {
-                    result.add_valid(name);
-                }
-                Err(e) => {
-                    result.add_invalid(name, e);
+                doc.validate(name, &all_docs, &mut ctx);
+
+                match ctx.result() {
+                    Ok(_) => result.add_valid(name),
+                    Err(e) => result.add_invalid(name, e),
                 }
             }
-        }
 
-        if !quiet {
-            print!("{}", result);
-        }
-        results.push(result);
-    }
+            if !quiet {
+                print!("{}", result);
+            }
+
+            result
+        })
+        .collect();
 
     if results.iter().any(|f| f.result().is_err()) {
         std::process::exit(1);
