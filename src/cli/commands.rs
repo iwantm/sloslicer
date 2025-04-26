@@ -6,8 +6,16 @@ use serde_yaml::{Deserializer, Value};
 use crate::parser::document::Document;
 use crate::utils::errors::{ParserError, ParserResult};
 use crate::utils::validation_context::{ValidationContext, ValidationResult};
+use rayon::prelude::*;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use walkdir::WalkDir;
+
+pub type DocumentParseResult = (
+    ValidationResult,
+    HashMap<String, Document>,
+    HashMap<String, ValidationContext>,
+);
 
 fn find_documents(path_string: &str, recursive: bool) -> ParserResult<Vec<PathBuf>> {
     let path = Path::new(&path_string);
@@ -28,13 +36,21 @@ fn find_documents(path_string: &str, recursive: bool) -> ParserResult<Vec<PathBu
                 .and_then(|e| if e.path().is_file() { Some(e) } else { None })
         });
 
-        for file in files_iter {
-            let extension = file.path().extension().and_then(|e| e.to_str());
+        let files_vec: Vec<PathBuf> = files_iter
+            .par_bridge()
+            .filter_map(|file| {
+                if matches!(
+                    file.path().extension().and_then(|e| e.to_str()),
+                    Some("yaml" | "yml")
+                ) {
+                    Some(file.path().to_path_buf())
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-            if matches!(extension, Some("yaml" | "yml")) {
-                files.push(file.path().to_path_buf());
-            }
-        }
+        files.extend(files_vec);
     } else {
         return Err(ParserError::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -45,13 +61,7 @@ fn find_documents(path_string: &str, recursive: bool) -> ParserResult<Vec<PathBu
     Ok(files)
 }
 
-pub fn parse_files(
-    file: &PathBuf,
-) -> ParserResult<(
-    ValidationResult,
-    HashMap<String, Document>,
-    HashMap<String, ValidationContext>,
-)> {
+pub fn parse_files(file: &PathBuf) -> ParserResult<DocumentParseResult> {
     let mut docs = HashMap::new();
     let mut ctxs = HashMap::new();
 
@@ -81,20 +91,32 @@ pub fn parse_files(
 }
 
 pub fn validate(path_string: String, recursive: bool, quiet: bool) -> ParserResult<()> {
-    let files: Vec<PathBuf> = find_documents(&path_string, recursive)?;
     let mut results = vec![];
+
+    let files: Vec<PathBuf> = find_documents(&path_string, recursive)?;
+
+    let parsed_results: Vec<DocumentParseResult> = files
+        .par_iter()
+        .map(|file| {
+            parse_files(file)
+                .map_err(|e| eprintln!("{}", e))
+                .expect("Failed to parse file")
+        })
+        .collect();
+
     let mut all_docs = HashMap::new();
-
-    for file in &files {
-        let (mut result, docs, mut ctxs) = parse_files(file)?;
+    for (_result, docs, _ctxs) in &parsed_results {
         all_docs.extend(docs.clone());
+    }
+    let all_docs = Arc::new(all_docs);
 
+    for (mut result, docs, mut ctxs) in parsed_results {
         for (name, doc) in &docs {
             let parse_ctx = ctxs.get_mut(name).unwrap();
             let mut ctx = ValidationContext::new();
             ctx.combine(parse_ctx);
 
-            doc.validate(&all_docs, &mut ctx);
+            doc.validate(name, &*all_docs, &mut ctx);
             match ctx.result() {
                 Ok(_) => {
                     result.add_valid(name);
@@ -104,6 +126,7 @@ pub fn validate(path_string: String, recursive: bool, quiet: bool) -> ParserResu
                 }
             }
         }
+
         if !quiet {
             print!("{}", result);
         }

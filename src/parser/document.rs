@@ -134,7 +134,12 @@ impl Document {
         Ok((name, idk))
     }
 
-    pub fn validate(&self, document_map: &HashMap<String, Document>, ctx: &mut ValidationContext) {
+    pub fn validate(
+        &self,
+        path: &str,
+        document_map: &HashMap<String, Document>,
+        ctx: &mut ValidationContext,
+    ) {
         match self {
             Document::DataSource(data_source_doc) => data_source_doc.validate(None, ctx),
             Document::Slo(slodoc) => slodoc.validate(None, document_map, ctx),
@@ -151,8 +156,8 @@ impl Document {
             }
             Document::Service(service_doc) => service_doc.validate(ctx),
             Document::InvalidKind => ctx.push(ParserError::Validation {
-                path: "None".to_owned(),
-                message: "Couldn't match Document".to_string(),
+                path: path.to_string(),
+                message: "Couldn't match document type.".to_string(),
             }),
         }
     }
