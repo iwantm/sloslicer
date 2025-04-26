@@ -11,14 +11,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use walkdir::WalkDir;
 
-pub type DocumentParseResult = (
-    ValidationResult,
-    HashMap<String, Document>,
-    HashMap<String, ValidationContext>,
-);
+pub struct DocumentParseResult {
+    validation_result: ValidationResult,
+    documents: HashMap<String, Document>,
+    validation_contexts: HashMap<String, ValidationContext>,
+}
 
 fn find_documents(path_string: &str, recursive: bool) -> ParserResult<Vec<PathBuf>> {
-    let path = Path::new(&path_string);
+    let path = Path::new(path_string);
     let mut files = vec![];
 
     if path.is_file() {
@@ -87,50 +87,51 @@ pub fn parse_files(file: &PathBuf) -> ParserResult<DocumentParseResult> {
         ctxs.insert(name, ctx);
     }
 
-    Ok((validation_result, docs, ctxs))
+    Ok(DocumentParseResult {
+        validation_result,
+        documents: docs,
+        validation_contexts: ctxs,
+    })
 }
 
 pub fn validate(path_string: String, recursive: bool, quiet: bool) -> ParserResult<()> {
-    // let mut results = vec![];
-
     let files: Vec<PathBuf> = find_documents(&path_string, recursive)?;
 
-    let parsed_results: Vec<DocumentParseResult> = files
+    let parsed_results: ParserResult<Vec<_>> = files.par_iter().map(parse_files).collect();
+
+    let parsed_results = parsed_results?;
+
+    let all_docs: HashMap<String, Document> = parsed_results
         .par_iter()
-        .map(|file| {
-            parse_files(file)
-                .map_err(|e| eprintln!("{}", e))
-                .expect("Failed to parse file")
-        })
+        .flat_map(|doc| doc.documents.clone()) // clones each (k,v) pair, not whole HashMap
         .collect();
 
-    let mut all_docs = HashMap::new();
-    for (_result, docs, _ctxs) in &parsed_results {
-        all_docs.extend(docs.clone());
-    }
     let all_docs = Arc::new(all_docs);
 
     let results: Vec<_> = parsed_results
         .into_par_iter()
-        .map(|(mut result, docs, mut ctxs)| {
-            for (name, doc) in &docs {
-                let parse_ctx = ctxs.get_mut(name).unwrap();
+        .map(|mut parsed_file| {
+            for (name, doc) in parsed_file.documents {
+                let parse_ctx = parsed_file
+                    .validation_contexts
+                    .get_mut(&name)
+                    .unwrap_or_else(|| panic!("Expected validation context for document {}", name));
                 let mut ctx = ValidationContext::new();
                 ctx.combine(parse_ctx);
 
-                doc.validate(name, &all_docs, &mut ctx);
+                doc.validate(&name, &all_docs, &mut ctx);
 
                 match ctx.result() {
-                    Ok(_) => result.add_valid(name),
-                    Err(e) => result.add_invalid(name, e),
+                    Ok(_) => parsed_file.validation_result.add_valid(&name),
+                    Err(e) => parsed_file.validation_result.add_invalid(&name, e),
                 }
             }
 
             if !quiet {
-                print!("{}", result);
+                print!("{}", parsed_file.validation_result);
             }
 
-            result
+            parsed_file.validation_result
         })
         .collect();
 
